@@ -17,6 +17,35 @@
     }
 
     fetchSyncStatus();
+const { createClient } = require('@supabase/supabase-js');
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+exports.handler = async () => {
+  const { data, error } = await supabase
+    .from('reps')
+    .select('updated_at')
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message }),
+    };
+  }
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      lastSynced: data[0]?.updated_at || 'No data yet',
+    }),
+  };
+};
+
   </script>
 </body>
 </html>
