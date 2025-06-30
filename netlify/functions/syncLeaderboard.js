@@ -40,9 +40,12 @@ exports.handler = async function () {
       for (const engagement of data.results) {
         const { type, timestamp, ownerId, durationMilliseconds } = engagement.engagement;
 
-        if (type === 'CALL') {
-          const callDate = new Date(timestamp);
-          if (callDate.toISOString() >= todayISO) {
+if (type === 'CALL') {
+  const callDate = new Date(timestamp);
+  console.log(`📞 CALL found: ${callDate.toISOString()} — Owner: ${ownerId}, Duration: ${durationMilliseconds}`);
+
+  if (callDate.toISOString() >= todayISO) {
+
             const repId = ownerId || 'unknown';
 
             if (!callMap.has(repId)) {
