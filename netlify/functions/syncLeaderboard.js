@@ -1,108 +1,101 @@
-const fetch = require('node-fetch');
+const { fetch } = require('undici');
 const { createClient } = require('@supabase/supabase-js');
 
-const HUBSPOT_API_KEY = process.env.HUBSPOT_API_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const HUBSPOT_API_KEY = process.env.HUBSPOT_API_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-const BASE_URL = 'https://api.hubapi.com/engagements/v1/engagements/paged';
-const today = new Date().toISOString().split('T')[0];
 
-exports.handler = async function handler(event, context) {
-  let hasMore = true;
-  let offset = 0;
-  const callMap = new Map();
-  let fetched = 0;
+exports.handler = async function () {
+  try {
+    const todayISO = new Date().toISOString().slice(0, 10);
+    const callMap = new Map();
 
-  while (hasMore) {
-    const res = await fetch(`${BASE_URL}?hapikey=${HUBSPOT_API_KEY}&limit=100&offset=${offset}`);
-    if (!res.ok) {
-      console.error('❌ HubSpot fetch failed');
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: 'Failed to fetch engagements from HubSpot' })
-      };
-    }
+    console.log('📅 Today ISO:', todayISO);
 
-    const data = await res.json();
-    const results = data.results || [];
-    fetched += results.length;
+    // Fetch reps from Supabase
+    const { data: reps, error: repsError } = await supabase.from('reps').select('hubspot_owner_id');
+    if (repsError) throw repsError;
 
-    console.log(`📦 Fetched ${results.length} engagements`);
+    const repIds = reps.map(rep => rep.hubspot_owner_id);
+    console.log(`📋 Loaded ${repIds.length} reps`);
 
-    // 👉 Log one sample engagement to inspect Aloware formatting
-    if (results.length > 0) {
-      console.log('📄 Sample engagement:\n', JSON.stringify(results[0], null, 2));
-    }
+    let after = undefined;
+    let hasMore = true;
 
-    for (const item of results) {
-      const engagement = item.engagement;
-      const metadata = item.metadata;
-      const { type, timestamp, ownerId } = engagement;
+    while (hasMore) {
+      const hsUrl = new URL('https://api.hubapi.com/engagements/v1/engagements/paged');
+      hsUrl.searchParams.set('limit', '100');
+      if (after) hsUrl.searchParams.set('offset', after);
+      hsUrl.searchParams.set('hapikey', HUBSPOT_API_KEY);
 
-      if (type === 'CALL') {
-        const callDate = new Date(timestamp);
-        const callISO = callDate.toISOString();
-        const todayISO = new Date().toISOString().split('T')[0];
+      const response = await fetch(hsUrl.toString());
+      if (!response.ok) throw new Error(`Failed to fetch engagements: ${response.status}`);
+      const data = await response.json();
 
-        // durationMilliseconds might be undefined
-        const duration = metadata?.durationMilliseconds;
-        console.log(`📞 CALL found: ${callISO} — Owner: ${ownerId}, Duration: ${duration}`);
+      console.log(`📦 Fetched ${data.results.length} engagements`);
 
-        if (callISO.startsWith(todayISO)) {
-          const repId = ownerId || 'unknown';
-          if (!callMap.has(repId)) {
-            callMap.set(repId, {
-              callCount: 0,
-              totalDuration: 0
-            });
+      for (const engagement of data.results) {
+        const { type, timestamp, ownerId, durationMilliseconds } = engagement.engagement;
+
+        if (type === 'CALL') {
+          const callDate = new Date(timestamp);
+          console.log(`📞 CALL found: ${callDate.toISOString()} — Owner: ${ownerId}, Duration: ${durationMilliseconds}`);
+
+          if (callDate.toISOString().startsWith(todayISO)) {
+            const repId = ownerId || 'unknown';
+
+            if (!callMap.has(repId)) {
+              callMap.set(repId, {
+                callCount: 0,
+                totalDuration: 0
+              });
+            }
+
+            const repStats = callMap.get(repId);
+            repStats.callCount += 1;
+            repStats.totalDuration += Number(durationMilliseconds || 0);
           }
-          const current = callMap.get(repId);
-          current.callCount += 1;
-          current.totalDuration += duration || 0;
-          callMap.set(repId, current);
         }
       }
+
+      after = data.offset;
+      hasMore = data.hasMore;
+      console.log(`➡️ Next after: ${after} | Has more: ${hasMore}`);
     }
 
-    hasMore = data.hasMore;
-    offset = data.offset || 0;
-    console.log(`➡️ Next offset: ${offset} | Has more: ${hasMore}`);
-  }
+    // Upsert aggregated call data into leaderboard table
+    const rows = [];
+    for (const [ownerId, stats] of callMap.entries()) {
+      if (!repIds.includes(ownerId)) continue;
 
-  const updates = [];
-  for (const [repId, { callCount, totalDuration }] of callMap) {
-    updates.push({
-      hubspot_owner_id: repId,
-      call_count: callCount,
-      total_call_time_seconds: Math.round(totalDuration / 1000),
-      avg_call_length_seconds: callCount > 0 ? Math.round(totalDuration / 1000 / callCount) : 0,
-      last_updated_at: new Date().toISOString()
-    });
-  }
+      rows.push({
+        hubspot_owner_id: ownerId,
+        call_count: stats.callCount,
+        avg_call_length_seconds: stats.callCount > 0 ? Math.round(stats.totalDuration / 1000 / stats.callCount) : 0,
+        total_call_time_seconds: Math.round(stats.totalDuration / 1000),
+        last_updated_at: new Date().toISOString()
+      });
+    }
 
-  console.log('🔄 Upserting call data:', updates);
+    console.log('🔄 Upserting call data:', rows);
 
-  if (updates.length > 0) {
-    const { error } = await supabase.from('leaderboard').upsert(updates, {
+    const { error: upsertError } = await supabase.from('leaderboard').upsert(rows, {
       onConflict: ['hubspot_owner_id']
     });
 
-    if (error) {
-      console.error('❌ Supabase upsert error:', error);
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: 'Failed to upsert leaderboard data' })
-      };
-    }
-  }
+    if (upsertError) throw upsertError;
 
-  return {
-    statusCode: 200,
-    body: JSON.stringify({
-      message: '✅ Sync completed using cursor-based pagination',
-      totalReps: updates.length
-    })
-  };
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ message: '✅ Sync completed using cursor-based pagination', totalReps: rows.length })
+    };
+  } catch (err) {
+    console.error('❌ Sync error:', err);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: err.message })
+    };
+  }
 };
