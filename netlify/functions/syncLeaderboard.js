@@ -28,13 +28,13 @@ exports.handler = async () => {
   console.log(`📊 Leaderboard sync started at ${startedAt}`);
 
   try {
+    // Fetch all HubSpot owners
     console.log('🔗 Fetching HubSpot owners...');
     const ownersRes = await fetch('https://api.hubapi.com/crm/v3/owners/', {
       headers: HUBSPOT_HEADERS,
     });
     const ownersJson = await ownersRes.json();
     const owners = ownersJson.results || [];
-
     console.log(`👥 Found ${owners.length} owners`);
 
     const { start, end } = getTodayDateRange();
@@ -46,7 +46,7 @@ exports.handler = async () => {
       const email = owner.email;
       const avatar_url = owner.user?.avatarUrl || null;
 
-      // 1. Get today's calls using new API
+      // 🔎 FETCH CALLS
       console.log(`📞 Fetching calls for ${name} (ID ${ownerId})...`);
       const callsRes = await fetch(
         'https://api.hubapi.com/crm/v3/objects/calls/search',
@@ -79,19 +79,18 @@ exports.handler = async () => {
 
       const callsData = await callsRes.json();
       const callsToday = callsData.results || [];
-
       const call_count = callsToday.length;
       const total_call_time_seconds = callsToday.reduce((sum, call) => {
-        return sum + Number(call.properties.hs_call_duration || 0);
+        const duration = parseInt(call.properties.hs_call_duration || '0', 10);
+        return sum + duration;
       }, 0);
-
       const avg_call_length_seconds = call_count
         ? Math.round(total_call_time_seconds / call_count)
         : 0;
 
-      console.log(`✅ ${call_count} calls today, avg length ${avg_call_length_seconds}s`);
+      console.log(`✅ ${call_count} calls today, total time ${total_call_time_seconds}s, avg length ${avg_call_length_seconds}s`);
 
-      // 2. Get MTD sales
+      // 💵 FETCH SALES
       console.log(`💰 Fetching MTD sales for ${name}...`);
       const dealsRes = await fetch(
         'https://api.hubapi.com/crm/v3/objects/deals/search',
@@ -115,7 +114,7 @@ exports.handler = async () => {
                   {
                     propertyName: 'dealstage',
                     operator: 'EQ',
-                    value: 'closedwon', // 🔁 Double-check this ID in your HubSpot pipeline
+                    value: 'closedwon',
                   },
                 ],
               },
@@ -128,25 +127,30 @@ exports.handler = async () => {
 
       const dealsData = await dealsRes.json();
       const sales_mtd = (dealsData.results || []).reduce((sum, deal) => {
-        return sum + Number(deal.properties.amount || 0);
+        const amt = parseFloat(deal.properties.amount || '0');
+        return sum + (isNaN(amt) ? 0 : amt);
       }, 0);
 
       console.log(`💵 MTD Sales: $${sales_mtd}`);
 
-      // 3. Upsert to Supabase leaderboard table
-      await supabase.from('leaderboard').upsert({
+      // 📝 UPSERT TO SUPABASE
+      const { error } = await supabase.from('leaderboard').upsert({
         hubspot_owner_id: ownerId,
         name,
         email,
         avatar_url,
         call_count,
         avg_call_length_seconds,
-        total_call_time_seconds: Math.round(total_call_time_seconds),
+        total_call_time_seconds,
         sales_mtd,
         last_updated_at: new Date().toISOString(),
       });
 
-      console.log(`✅ Synced ${name} to leaderboard.`);
+      if (error) {
+        console.error(`❌ Supabase error for ${name}:`, error.message);
+      } else {
+        console.log(`✅ Synced ${name} to leaderboard.`);
+      }
     }
 
     return {
