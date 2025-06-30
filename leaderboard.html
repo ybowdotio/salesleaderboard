@@ -2,36 +2,58 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sales Leaderboard</title>
   <style>
     body {
-      font-family: sans-serif;
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background-color: #f5f8fa;
+      color: #33475b;
+      margin: 0;
       padding: 2rem;
     }
     h1 {
+      color: #2e475d;
       font-size: 2rem;
       margin-bottom: 1rem;
     }
     table {
       width: 100%;
-      border-collapse: collapse;
-      margin-top: 1rem;
+      border-collapse: separate;
+      border-spacing: 0;
+      background: white;
+      border: 1px solid #dfe3e8;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 0 4px rgba(0, 0, 0, 0.06);
     }
     th, td {
-      border: 1px solid #ccc;
-      padding: 0.5rem;
+      padding: 0.75rem 1rem;
       text-align: left;
     }
+    thead {
+      background-color: #f6f9fc;
+      border-bottom: 1px solid #dfe3e8;
+    }
     th {
-      background-color: #f0f0f0;
+      font-weight: 600;
+      color: #2e475d;
+      font-size: 0.9rem;
+    }
+    tr:nth-child(even) {
+      background-color: #f9fafb;
+    }
+    tr:hover {
+      background-color: #edf2f7;
+    }
+    td {
+      font-size: 0.9rem;
     }
   </style>
 </head>
 <body>
   <h1>Sales Leaderboard</h1>
-  <div id="error" style="color: red;"></div>
-  <table id="leaderboard">
+  <table id="leaderboardTable">
     <thead>
       <tr>
         <th>Name</th>
@@ -47,24 +69,25 @@
   <script>
     async function loadLeaderboard() {
       try {
-        const res = await fetch('/.netlify/functions/getLeaderboard');
+        const res = await fetch("/.netlify/functions/getLeaderboard");
         const data = await res.json();
 
-        const tbody = document.querySelector('#leaderboard tbody');
+        const tbody = document.querySelector("#leaderboardTable tbody");
+        tbody.innerHTML = "";
+
         data.forEach(rep => {
-          const row = document.createElement('tr');
-          row.innerHTML = `
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
             <td>${rep.name}</td>
             <td>${rep.call_count}</td>
             <td>${rep.avg_call_length_seconds}</td>
             <td>${rep.total_call_time_seconds}</td>
             <td>${rep.sales_mtd}</td>
           `;
-          tbody.appendChild(row);
+          tbody.appendChild(tr);
         });
-      } catch (err) {
-        document.getElementById('error').textContent = 'Error loading leaderboard.';
-        console.error(err);
+      } catch (error) {
+        document.body.innerHTML += "<p style='color: red;'>Error loading leaderboard.</p>";
       }
     }
 
