@@ -147,6 +147,15 @@ exports.handler = async () => {
     return {
       statusCode: 500,
       body: JSON.stringify({ error: error.message }),
+
+      const callsJson = await callsRes.json();
+console.log(`📞 ${name} (${ownerId}) has ${callsJson.results?.length} calls today`);
+console.dir(callsJson.results?.map(c => ({
+  id: c.id,
+  duration: c.properties.hs_call_duration,
+  timestamp: c.properties.hs_timestamp,
+})), { depth: null });
+
     };
   }
 };
