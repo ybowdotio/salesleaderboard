@@ -1,11 +1,11 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+)
 
-export default async (req, res) => {
+export const handler = async () => {
   try {
     const { data, error } = await supabase
       .from('leaderboard')
@@ -14,9 +14,18 @@ export default async (req, res) => {
 
     if (error) throw error;
 
-    return res.status(200).json(data);
+    return {
+      statusCode: 200,
+      body: JSON.stringify(data),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    };
   } catch (err) {
     console.error('Error loading leaderboard:', err);
-    return res.status(500).json({ error: err.message });
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: err.message }),
+    };
   }
 };
