@@ -6,46 +6,42 @@
   <title>Sales Leaderboard</title>
   <style>
     body {
-      font-family: Arial, sans-serif;
+      font-family: sans-serif;
       padding: 2rem;
     }
-
     h1 {
       font-size: 2rem;
       margin-bottom: 1rem;
     }
-
     table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 1rem;
     }
-
     th, td {
-      padding: 0.75rem;
+      border: 1px solid #ccc;
+      padding: 0.5rem;
       text-align: left;
-      border-bottom: 1px solid #ddd;
     }
-
     th {
-      background-color: #f8f8f8;
+      background-color: #f0f0f0;
     }
   </style>
 </head>
 <body>
   <h1>Sales Leaderboard</h1>
-  <div id="status">Loading...</div>
-  <table id="leaderboard" style="display: none;">
+  <div id="error" style="color: red;"></div>
+  <table id="leaderboard">
     <thead>
       <tr>
         <th>Name</th>
-        <th>Phone Calls</th>
-        <th>Avg. Call Length</th>
-        <th>Total Call Time</th>
-        <th>MTD Sales</th>
+        <th>Call Count</th>
+        <th>Avg. Call Length (s)</th>
+        <th>Total Call Time (s)</th>
+        <th>Sales MTD</th>
       </tr>
     </thead>
-    <tbody id="leaderboard-body"></tbody>
+    <tbody></tbody>
   </table>
 
   <script>
@@ -54,31 +50,20 @@
         const res = await fetch('/.netlify/functions/getLeaderboard');
         const data = await res.json();
 
-        if (!Array.isArray(data)) {
-          throw new Error('Invalid response format');
-        }
-
-        const tableBody = document.getElementById('leaderboard-body');
-        const status = document.getElementById('status');
-        const table = document.getElementById('leaderboard');
-
-        tableBody.innerHTML = '';
+        const tbody = document.querySelector('#leaderboard tbody');
         data.forEach(rep => {
           const row = document.createElement('tr');
           row.innerHTML = `
             <td>${rep.name}</td>
-            <td>${rep.phone_calls_today ?? 0}</td>
-            <td>${rep.avg_call_length_today ?? '0s'}</td>
-            <td>${rep.total_call_time_today ?? '0s'}</td>
-            <td>${rep.total_sales_mtd ?? '$0'}</td>
+            <td>${rep.call_count}</td>
+            <td>${rep.avg_call_length_seconds}</td>
+            <td>${rep.total_call_time_seconds}</td>
+            <td>${rep.sales_mtd}</td>
           `;
-          tableBody.appendChild(row);
+          tbody.appendChild(row);
         });
-
-        status.style.display = 'none';
-        table.style.display = '';
       } catch (err) {
-        document.getElementById('status').textContent = 'Error loading leaderboard.';
+        document.getElementById('error').textContent = 'Error loading leaderboard.';
         console.error(err);
       }
     }
