@@ -1,101 +1,75 @@
-const { fetch } = require('undici');
-const { createClient } = require('@supabase/supabase-js');
+import { createClient } from '@supabase/supabase-js';
+import fetch from 'node-fetch';
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const HUBSPOT_API_KEY = process.env.HUBSPOT_API_KEY;
+// Initialize Supabase
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+// HubSpot private app token
+const HUBSPOT_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 
 exports.handler = async function () {
   try {
-    const todayISO = new Date().toISOString().slice(0, 10);
-    const callMap = new Map();
-
-    console.log('📅 Today ISO:', todayISO);
-
-    // Fetch reps from Supabase
-    const { data: reps, error: repsError } = await supabase.from('reps').select('hubspot_owner_id');
-    if (repsError) throw repsError;
-
-    const repIds = reps.map(rep => rep.hubspot_owner_id);
-    console.log(`📋 Loaded ${repIds.length} reps`);
-
-    let after = undefined;
     let hasMore = true;
+    let after = undefined;
+    let totalSynced = 0;
 
     while (hasMore) {
-      const hsUrl = new URL('https://api.hubapi.com/engagements/v1/engagements/paged');
-      hsUrl.searchParams.set('limit', '100');
-      if (after) hsUrl.searchParams.set('offset', after);
-      hsUrl.searchParams.set('hapikey', HUBSPOT_API_KEY);
+      const url = new URL('https://api.hubapi.com/crm/v3/objects/calls');
+      url.searchParams.set('limit', '100');
+      if (after) url.searchParams.set('after', after);
 
-      const response = await fetch(hsUrl.toString());
-      if (!response.ok) throw new Error(`Failed to fetch engagements: ${response.status}`);
-      const data = await response.json();
-
-      console.log(`📦 Fetched ${data.results.length} engagements`);
-
-      for (const engagement of data.results) {
-        const { type, timestamp, ownerId, durationMilliseconds } = engagement.engagement;
-
-        if (type === 'CALL') {
-          const callDate = new Date(timestamp);
-          console.log(`📞 CALL found: ${callDate.toISOString()} — Owner: ${ownerId}, Duration: ${durationMilliseconds}`);
-
-          if (callDate.toISOString().startsWith(todayISO)) {
-            const repId = ownerId || 'unknown';
-
-            if (!callMap.has(repId)) {
-              callMap.set(repId, {
-                callCount: 0,
-                totalDuration: 0
-              });
-            }
-
-            const repStats = callMap.get(repId);
-            repStats.callCount += 1;
-            repStats.totalDuration += Number(durationMilliseconds || 0);
-          }
+      const res = await fetch(url.href, {
+        headers: {
+          Authorization: `Bearer ${HUBSPOT_TOKEN}`,
+          'Content-Type': 'application/json'
         }
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to fetch calls: ${res.status}`);
       }
 
-      after = data.offset;
-      hasMore = data.hasMore;
-      console.log(`➡️ Next after: ${after} | Has more: ${hasMore}`);
+      const data = await res.json();
+      const calls = data.results;
+
+      // Process and upsert calls
+      for (const call of calls) {
+        const { id, properties } = call;
+
+        await supabase
+          .from('calls')
+          .upsert({
+            id,
+            hs_call_title: properties.hs_call_title,
+            hs_call_duration: Number(properties.hs_call_duration) || 0,
+            hs_call_direction: properties.hs_call_direction,
+            hs_call_status: properties.hs_call_status,
+            hs_timestamp: properties.hs_timestamp,
+            hubspot_owner_id: properties.hubspot_owner_id,
+            hs_call_from_number: properties.hs_call_from_number,
+            hs_call_to_number: properties.hs_call_to_number
+          });
+      }
+
+      totalSynced += calls.length;
+      hasMore = !!data.paging?.next?.after;
+      after = data.paging?.next?.after;
     }
-
-    // Upsert aggregated call data into leaderboard table
-    const rows = [];
-    for (const [ownerId, stats] of callMap.entries()) {
-      if (!repIds.includes(ownerId)) continue;
-
-      rows.push({
-        hubspot_owner_id: ownerId,
-        call_count: stats.callCount,
-        avg_call_length_seconds: stats.callCount > 0 ? Math.round(stats.totalDuration / 1000 / stats.callCount) : 0,
-        total_call_time_seconds: Math.round(stats.totalDuration / 1000),
-        last_updated_at: new Date().toISOString()
-      });
-    }
-
-    console.log('🔄 Upserting call data:', rows);
-
-    const { error: upsertError } = await supabase.from('leaderboard').upsert(rows, {
-      onConflict: ['hubspot_owner_id']
-    });
-
-    if (upsertError) throw upsertError;
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ message: '✅ Sync completed using cursor-based pagination', totalReps: rows.length })
+      body: JSON.stringify({
+        message: `✅ Synced ${totalSynced} calls successfully using CRM v3 API`
+      })
     };
-  } catch (err) {
-    console.error('❌ Sync error:', err);
+  } catch (error) {
+    console.error('Sync error:', error.message);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: err.message })
+      body: JSON.stringify({ error: error.message })
     };
   }
 };
