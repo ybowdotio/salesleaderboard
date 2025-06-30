@@ -19,7 +19,6 @@ exports.handler = async () => {
     });
 
     const data = await res.json();
-
     console.log('📦 Raw HubSpot response:', JSON.stringify(data, null, 2));
 
     if (!Array.isArray(data.results)) {
@@ -29,14 +28,12 @@ exports.handler = async () => {
     const owners = data.results;
 
     for (const owner of owners) {
-      await supabase
-        .from('reps')
-        .upsert({
-          hubspot_owner_id: owner.id,
-          name: `${owner.firstName ?? ''} ${owner.lastName ?? ''}`.trim(),
-          email: owner.email,
-          avatar_url: owner.user?.avatarUrl || null,
-        });
+      await supabase.from('reps').upsert({
+        hubspot_owner_id: owner.id,
+        name: `${owner.firstName ?? ''} ${owner.lastName ?? ''}`.trim(),
+        email: owner.email,
+        avatar_url: owner.user?.avatarUrl || null,
+      });
     }
 
     console.log(`✅ Finished syncing ${owners.length} reps`);
@@ -50,9 +47,30 @@ exports.handler = async () => {
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ status: 'OK', synced: owners.length }),
+      body: JSON.stringify({
+        status: 'OK',
+        synced: owners.length,
+        lastSyncedAt: startedAt,
+      }),
     };
   } catch (err) {
-    console.error('❌ Sync failed', err.message);
+    console.error('❌ Sync failed:', err.message);
 
-    await supabase.from('sync_logs').ins_
+    await supabase.from('sync_logs').insert([
+      {
+        last_synced_at: startedAt,
+        status: 'FAILED',
+        error: err.message,
+      },
+    ]);
+
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        error: 'Sync failed',
+        details: err.message,
+        lastSyncedAt: startedAt,
+      }),
+    };
+  }
+};
