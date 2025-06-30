@@ -43,28 +43,49 @@ exports.handler = async () => {
       const email = owner.email;
       const avatar_url = owner.user?.avatarUrl || null;
 
-      // 1. Get today's calls (logged as engagements)
-      const engagementsRes = await fetch(
-        `https://api.hubapi.com/engagements/v1/engagements/associated/OWNER/${ownerId}/paged?limit=100`,
-        { headers: HUBSPOT_HEADERS }
+      // 1. Get today's calls using v3 search
+      const callsRes = await fetch(
+        'https://api.hubapi.com/crm/v3/objects/calls/search',
+        {
+          method: 'POST',
+          headers: HUBSPOT_HEADERS,
+          body: JSON.stringify({
+            filterGroups: [
+              {
+                filters: [
+                  {
+                    propertyName: 'hs_timestamp',
+                    operator: 'BETWEEN',
+                    value: new Date(start).getTime(),
+                    highValue: new Date(end).getTime(),
+                  },
+                  {
+                    propertyName: 'hubspot_owner_id',
+                    operator: 'EQ',
+                    value: ownerId,
+                  },
+                ],
+              },
+            ],
+            properties: ['hs_call_duration'],
+            limit: 100,
+          }),
+        }
       );
 
-      const engagements = await engagementsRes.json();
-      const callsToday = (engagements.results || []).filter((e) => {
-        const ts = new Date(e.engagement.timestamp).toISOString();
-        return e.engagement.type === 'CALL' && ts >= start && ts <= end;
-      });
+      const callsJson = await callsRes.json();
+      const callsToday = callsJson.results || [];
 
       const call_count = callsToday.length;
       const total_call_time_seconds = callsToday.reduce((sum, call) => {
-        return sum + (call.engagement.durationMilliseconds || 0) / 1000;
+        return sum + Number(call.properties.hs_call_duration || 0);
       }, 0);
 
       const avg_call_length_seconds = call_count
         ? Math.round(total_call_time_seconds / call_count)
         : 0;
 
-      // 2. Get MTD sales (from deals where amount is counted)
+      // 2. Get MTD sales
       const dealsRes = await fetch(
         `https://api.hubapi.com/crm/v3/objects/deals/search`,
         {
@@ -87,7 +108,7 @@ exports.handler = async () => {
                   {
                     propertyName: 'dealstage',
                     operator: 'EQ',
-                    value: 'closedwon', // Adjust if needed
+                    value: 'closedwon',
                   },
                 ],
               },
