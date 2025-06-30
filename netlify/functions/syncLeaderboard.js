@@ -24,18 +24,13 @@ function getMonthStartDate() {
 }
 
 exports.handler = async () => {
-  const startedAt = new Date().toISOString();
-  console.log(`📊 Leaderboard sync started at ${startedAt}`);
+  console.log(`📊 Leaderboard sync started at ${new Date().toISOString()}`);
 
   try {
-    // Fetch all HubSpot owners
-    console.log('🔗 Fetching HubSpot owners...');
     const ownersRes = await fetch('https://api.hubapi.com/crm/v3/owners/', {
       headers: HUBSPOT_HEADERS,
     });
-    const ownersJson = await ownersRes.json();
-    const owners = ownersJson.results || [];
-    console.log(`👥 Found ${owners.length} owners`);
+    const owners = (await ownersRes.json()).results || [];
 
     const { start, end } = getTodayDateRange();
     const monthStart = getMonthStartDate();
@@ -46,8 +41,7 @@ exports.handler = async () => {
       const email = owner.email;
       const avatar_url = owner.user?.avatarUrl || null;
 
-      // 🔎 FETCH CALLS
-      console.log(`📞 Fetching calls for ${name} (ID ${ownerId})...`);
+      // 📞 Fetch today's calls using `createdate`
       const callsRes = await fetch(
         'https://api.hubapi.com/crm/v3/objects/calls/search',
         {
@@ -58,7 +52,7 @@ exports.handler = async () => {
               {
                 filters: [
                   {
-                    propertyName: 'hs_timestamp',
+                    propertyName: 'createdate',
                     operator: 'BETWEEN',
                     value: start,
                     highValue: end,
@@ -77,10 +71,9 @@ exports.handler = async () => {
         }
       );
 
-      const callsData = await callsRes.json();
-      const callsToday = callsData.results || [];
-      const call_count = callsToday.length;
-      const total_call_time_seconds = callsToday.reduce((sum, call) => {
+      const calls = (await callsRes.json()).results || [];
+      const call_count = calls.length;
+      const total_call_time_seconds = calls.reduce((sum, call) => {
         const duration = parseInt(call.properties.hs_call_duration || '0', 10);
         return sum + duration;
       }, 0);
@@ -88,10 +81,11 @@ exports.handler = async () => {
         ? Math.round(total_call_time_seconds / call_count)
         : 0;
 
-      console.log(`✅ ${call_count} calls today, total time ${total_call_time_seconds}s, avg length ${avg_call_length_seconds}s`);
+      console.log(
+        `✅ ${call_count} calls for ${name} today, total ${total_call_time_seconds}s`
+      );
 
-      // 💵 FETCH SALES
-      console.log(`💰 Fetching MTD sales for ${name}...`);
+      // 💰 Fetch MTD Closed-Won sales
       const dealsRes = await fetch(
         'https://api.hubapi.com/crm/v3/objects/deals/search',
         {
@@ -125,15 +119,15 @@ exports.handler = async () => {
         }
       );
 
-      const dealsData = await dealsRes.json();
-      const sales_mtd = (dealsData.results || []).reduce((sum, deal) => {
+      const deals = (await dealsRes.json()).results || [];
+      const sales_mtd = deals.reduce((sum, deal) => {
         const amt = parseFloat(deal.properties.amount || '0');
         return sum + (isNaN(amt) ? 0 : amt);
       }, 0);
 
-      console.log(`💵 MTD Sales: $${sales_mtd}`);
+      console.log(`💵 MTD Sales for ${name}: $${sales_mtd}`);
 
-      // 📝 UPSERT TO SUPABASE
+      // 📝 Upsert to Supabase
       const { error } = await supabase.from('leaderboard').upsert({
         hubspot_owner_id: ownerId,
         name,
@@ -149,7 +143,7 @@ exports.handler = async () => {
       if (error) {
         console.error(`❌ Supabase error for ${name}:`, error.message);
       } else {
-        console.log(`✅ Synced ${name} to leaderboard.`);
+        console.log(`✅ Synced ${name}`);
       }
     }
 
@@ -157,11 +151,11 @@ exports.handler = async () => {
       statusCode: 200,
       body: JSON.stringify({ message: 'Leaderboard synced successfully' }),
     };
-  } catch (error) {
-    console.error('❌ Leaderboard sync failed:', error.message);
+  } catch (err) {
+    console.error('❌ Sync failed:', err.message);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: error.message }),
+      body: JSON.stringify({ error: err.message }),
     };
   }
 };
