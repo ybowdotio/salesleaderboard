@@ -9,7 +9,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const getTodayISOString = () => {
   const now = new Date();
-  now.setHours(0, 0, 0, 0);
+  now.setHours(0, 0, 0, 0); // midnight UTC
   return now.toISOString();
 };
 
@@ -23,21 +23,39 @@ exports.handler = async function () {
     let pagesChecked = 0;
     const maxPages = 3;
 
-    while (hasMore && pagesChecked < maxPages) {
+    while (hasMore) {
+      console.log(`📦 Fetching page with offset ${offset}`);
+
       const { data } = await axios.get(`https://api.hubapi.com/engagements/v1/engagements/paged`, {
         headers: { Authorization: `Bearer ${HUBSPOT_TOKEN}` },
         params: { limit, offset }
       });
 
+      console.log(`🔎 Returned ${data.results.length} engagements`);
+
       for (const engagement of data.results) {
         const { type, timestamp, ownerId, durationMilliseconds } = engagement.engagement;
 
+        console.log(`➡️ Engagement type: ${type}`);
+
         if (type === 'CALL') {
           const callDate = new Date(timestamp);
+          console.log(`📅 Call timestamp: ${callDate.toISOString()} vs today: ${todayISO}`);
+
           if (callDate.toISOString() >= todayISO) {
+            console.log(`✅ Call matched for today`);
             const repId = ownerId || 'unknown';
+            console.log(`👤 Owner ${repId}, duration: ${durationMilliseconds}`);
+
+            if (!durationMilliseconds) {
+              console.warn(`⚠️ Call has no duration:`, engagement);
+            }
+
             if (!callMap.has(repId)) {
-              callMap.set(repId, { callCount: 0, totalDuration: 0 });
+              callMap.set(repId, {
+                callCount: 0,
+                totalDuration: 0,
+              });
             }
             const entry = callMap.get(repId);
             entry.callCount++;
@@ -49,7 +67,14 @@ exports.handler = async function () {
       hasMore = data.hasMore;
       offset = data.offset || 0;
       pagesChecked++;
+      if (pagesChecked >= maxPages) {
+        console.warn(`⛔ Reached maxPages limit of ${maxPages}. Stopping pagination.`);
+        break;
+      }
     }
+
+    console.log("📊 Final callMap entries:");
+    console.log(Array.from(callMap.entries()));
 
     const upsertData = Array.from(callMap.entries()).map(([repId, { callCount, totalDuration }]) => ({
       rep_id: repId,
@@ -58,10 +83,20 @@ exports.handler = async function () {
       total_duration: totalDuration
     }));
 
+    console.log("📤 Upsert payload:", upsertData);
+
     if (upsertData.length > 0) {
-      await supabase.from('leaderboard').upsert(upsertData, {
-        onConflict: ['rep_id', 'date']
-      });
+      const { data: upsertResult, error: upsertError } = await supabase
+        .from('leaderboard')
+        .upsert(upsertData, {
+          onConflict: ['rep_id', 'date']
+        });
+
+      if (upsertError) {
+        console.error('❌ Supabase upsert error:', upsertError);
+      } else {
+        console.log('✅ Supabase upsert result:', upsertResult);
+      }
     }
 
     return {
@@ -69,7 +104,7 @@ exports.handler = async function () {
       body: JSON.stringify({ message: 'Leaderboard synced successfully' })
     };
   } catch (err) {
-    console.error('Sync error:', err);
+    console.error('🔥 Sync error:', err);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: 'Failed to sync leaderboard', details: err.message })
