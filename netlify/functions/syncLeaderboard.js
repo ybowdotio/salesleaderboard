@@ -1,5 +1,3 @@
-// Netlify Function: syncLeaderboard.js
-
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -22,8 +20,10 @@ exports.handler = async function () {
     let offset = 0;
     const limit = 100;
     const callMap = new Map();
+    let pagesChecked = 0;
+    const maxPages = 3;
 
-    while (hasMore) {
+    while (hasMore && pagesChecked < maxPages) {
       const { data } = await axios.get(`https://api.hubapi.com/engagements/v1/engagements/paged`, {
         headers: { Authorization: `Bearer ${HUBSPOT_TOKEN}` },
         params: { limit, offset }
@@ -37,10 +37,7 @@ exports.handler = async function () {
           if (callDate.toISOString() >= todayISO) {
             const repId = ownerId || 'unknown';
             if (!callMap.has(repId)) {
-              callMap.set(repId, {
-                callCount: 0,
-                totalDuration: 0,
-              });
+              callMap.set(repId, { callCount: 0, totalDuration: 0 });
             }
             const entry = callMap.get(repId);
             entry.callCount++;
@@ -51,19 +48,20 @@ exports.handler = async function () {
 
       hasMore = data.hasMore;
       offset = data.offset || 0;
+      pagesChecked++;
     }
 
-    // Push to Supabase leaderboard
-    for (const [repId, { callCount, totalDuration }] of callMap.entries()) {
-      await supabase.from('leaderboard').upsert(
-        {
-          rep_id: repId,
-          date: todayISO.slice(0, 10),
-          call_count: callCount,
-          total_duration: totalDuration
-        },
-        { onConflict: ['rep_id', 'date'] }
-      );
+    const upsertData = Array.from(callMap.entries()).map(([repId, { callCount, totalDuration }]) => ({
+      rep_id: repId,
+      date: todayISO.slice(0, 10),
+      call_count: callCount,
+      total_duration: totalDuration
+    }));
+
+    if (upsertData.length > 0) {
+      await supabase.from('leaderboard').upsert(upsertData, {
+        onConflict: ['rep_id', 'date']
+      });
     }
 
     return {
