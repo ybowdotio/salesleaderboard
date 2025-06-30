@@ -6,6 +6,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// ⬇️ Add this scheduled export here
+export const config = {
+  schedule: '0 * * * *' // Every hour, on the hour
+};
+
 exports.handler = async () => {
   console.log(`Sync started at ${new Date().toISOString()}`);
 
