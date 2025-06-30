@@ -7,64 +7,63 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const getTodayISOString = () => {
+const getTodayDate = () => {
   const now = new Date();
-  now.setUTCHours(0, 0, 0, 0); // Ensures midnight UTC
-  return now.toISOString();
+  now.setHours(0, 0, 0, 0);
+  return now.toISOString().slice(0, 10); // YYYY-MM-DD
 };
 
 exports.handler = async function () {
   try {
-    const todayISO = getTodayISOString();
-    const todayDate = todayISO.slice(0, 10);
+    const todayDate = getTodayDate();
+    const syncName = 'calls';
 
-    // Get current sync offset
-    const { data: trackerData, error: trackerError } = await supabase
+    // 🔍 Get sync state for today + name
+    const { data: syncState, error: syncFetchError } = await supabase
       .from('sync_tracker')
       .select('*')
       .eq('date', todayDate)
+      .eq('name', syncName)
       .single();
 
-    if (trackerError && trackerError.code !== 'PGRST116') {
-      throw trackerError;
+    if (syncFetchError && syncFetchError.code !== 'PGRST116') {
+      throw new Error(`Failed to fetch sync tracker: ${syncFetchError.message}`);
     }
 
-    const currentOffset = trackerData?.offset || 0;
-    const callMap = new Map();
+    const offset = syncState?.offset || 0;
+    const completed = syncState?.completed || false;
 
-    console.log(`🔄 Pulling 100 engagements at offset ${currentOffset}`);
-    const { data } = await axios.get('https://api.hubapi.com/engagements/v1/engagements/paged', {
+    if (completed) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ message: 'Sync already completed' })
+      };
+    }
+
+    // 📥 Pull a single batch of 100 engagements
+    console.log(`🔄 Pulling 100 engagements at offset ${offset}`);
+    const { data: response } = await axios.get('https://api.hubapi.com/engagements/v1/engagements/paged', {
       headers: { Authorization: `Bearer ${HUBSPOT_TOKEN}` },
-      params: {
-        limit: 100,
-        offset: currentOffset,
-      },
+      params: { limit: 100, offset }
     });
 
-    console.log(`📦 Returned ${data.results.length} engagements`);
+    console.log(`📦 Returned ${response.results.length} engagements`);
 
-    for (const engagement of data.results) {
+    const callMap = new Map();
+    const todayISO = new Date(todayDate).toISOString();
+
+    for (const engagement of response.results) {
       const { type, timestamp, ownerId, durationMilliseconds } = engagement.engagement;
 
-      console.log(`🔍 Type: ${type}`);
-      console.log(`🕓 Timestamp: ${new Date(timestamp).toISOString()}`);
-      console.log(`👤 Owner: ${ownerId}`);
-      console.log(`⏱️ Duration: ${durationMilliseconds}`);
-
-      if (type?.toUpperCase() === 'CALL') {
-        const callDate = new Date(timestamp);
-        if (callDate.toISOString() >= todayISO) {
+      if (type === 'CALL') {
+        const callDate = new Date(timestamp).toISOString();
+        if (callDate >= todayISO) {
           const repId = ownerId || 'unknown';
-
           if (!callMap.has(repId)) {
-            callMap.set(repId, {
-              callCount: 0,
-              totalDuration: 0,
-            });
+            callMap.set(repId, { callCount: 0, totalDuration: 0 });
           }
-
           const entry = callMap.get(repId);
-          entry.callCount++;
+          entry.callCount += 1;
           entry.totalDuration += durationMilliseconds || 0;
         }
       }
@@ -74,39 +73,42 @@ exports.handler = async function () {
       rep_id: repId,
       date: todayDate,
       call_count: callCount,
-      total_duration: totalDuration,
+      total_duration: totalDuration
     }));
-
-    console.log("📝 Upsert payload:", upsertData);
 
     if (upsertData.length > 0) {
       await supabase.from('leaderboard').upsert(upsertData, {
-        onConflict: ['rep_id', 'date'],
+        onConflict: ['rep_id', 'date']
       });
     }
 
-    // Track sync progress
-    const nextOffset = data.offset || 0;
-    const completed = !data.hasMore;
+    // Update sync_tracker with new offset + completion
+    const nextOffset = response.offset || 0;
+    const done = !response.hasMore;
 
     await supabase.from('sync_tracker').upsert({
       date: todayDate,
+      name: syncName,
       offset: nextOffset,
-      completed,
+      completed: done
     }, {
-      onConflict: ['date'],
+      onConflict: ['date', 'name']
     });
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ message: 'Sync completed', nextOffset, completed }),
+      body: JSON.stringify({
+        message: 'Sync completed',
+        nextOffset,
+        completed: done
+      })
     };
 
   } catch (err) {
     console.error('❌ Sync error:', err);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Failed to sync leaderboard', details: err.message }),
+      body: JSON.stringify({ error: 'Failed to sync leaderboard', details: err.message })
     };
   }
 };
