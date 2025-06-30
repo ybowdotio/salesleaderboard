@@ -9,7 +9,7 @@ export const handler = async () => {
   try {
     const { data, error } = await supabase
       .from('leaderboard')
-      .select('name, call_count, avg_call_length, total_call_time, sales_mtd')
+      .select('name, call_count, avg_call_length_seconds, total_call_time_seconds, sales_mtd')
       .order('sales_mtd', { ascending: false });
 
     if (error) throw error;
