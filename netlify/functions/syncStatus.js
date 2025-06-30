@@ -1,1 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Sync Status</title>
+</head>
+<body>
+  <h1>Last Sync Status</h1>
+  <pre id="status">Loading...</pre>
+
+  <script>
+    async function fetchSyncStatus() {
+      const res = await fetch('/.netlify/functions/syncStatus');
+      const data = await res.json();
+      document.getElementById('status').textContent = JSON.stringify(data, null, 2);
+    }
+
+    fetchSyncStatus();
+  </script>
+</body>
+</html>
 
