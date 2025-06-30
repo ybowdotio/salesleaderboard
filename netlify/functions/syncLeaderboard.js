@@ -1,70 +1,74 @@
 import { createClient } from '@supabase/supabase-js';
-import { fetch } from 'undici'; // ✅ replace node-fetch
+import 'undici';
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-const HUBSPOT_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
-
-export const handler = async () => {
+export default async function handler(req, res) {
   try {
-    let hasMore = true;
+    const callMap = new Map();
+    const todayISO = new Date().toISOString().slice(0, 10);
+    
     let after = undefined;
-    let totalSynced = 0;
+    let hasMore = true;
 
     while (hasMore) {
-      const url = new URL('https://api.hubapi.com/crm/v3/objects/calls');
+      const url = new URL('https://api.hubapi.com/engagements/v1/engagements/paged');
       url.searchParams.set('limit', '100');
-      if (after) url.searchParams.set('after', after);
+      if (after) url.searchParams.set('offset', after);
 
-      const res = await fetch(url.href, {
+      const response = await fetch(url.toString(), {
         headers: {
-          Authorization: `Bearer ${HUBSPOT_TOKEN}`,
-          'Content-Type': 'application/json'
-        }
+          Authorization: `Bearer ${process.env.HUBSPOT_PRIVATE_APP_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
       });
 
-      if (!res.ok) {
-        throw new Error(`Failed to fetch calls: ${res.status}`);
+      if (!response.ok) {
+        return res.status(401).json({ error: `Failed to fetch engagements: ${response.status}` });
       }
 
-      const data = await res.json();
-      const calls = data.results;
+      const data = await response.json();
 
-      for (const call of calls) {
-        const { id, properties } = call;
+      for (const engagement of data.results) {
+        const { type, timestamp, ownerId, durationMilliseconds } = engagement.engagement;
 
-        await supabase.from('calls').upsert({
-          id,
-          hs_call_title: properties.hs_call_title,
-          hs_call_duration: Number(properties.hs_call_duration) || 0,
-          hs_call_direction: properties.hs_call_direction,
-          hs_call_status: properties.hs_call_status,
-          hs_timestamp: properties.hs_timestamp,
-          hubspot_owner_id: properties.hubspot_owner_id,
-          hs_call_from_number: properties.hs_call_from_number,
-          hs_call_to_number: properties.hs_call_to_number
-        });
+        if (type === 'CALL') {
+          const callDate = new Date(timestamp);
+          if (callDate.toISOString().startsWith(todayISO)) {
+            const repId = ownerId || 'unknown';
+
+            if (!callMap.has(repId)) {
+              callMap.set(repId, { callCount: 0, totalDuration: 0 });
+            }
+
+            const stats = callMap.get(repId);
+            stats.callCount += 1;
+            stats.totalDuration += durationMilliseconds || 0;
+          }
+        }
       }
 
-      totalSynced += calls.length;
-      hasMore = !!data.paging?.next?.after;
-      after = data.paging?.next?.after;
+      hasMore = data.hasMore;
+      after = data.offset;
     }
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: `✅ Synced ${totalSynced} calls successfully using CRM v3 API`
-      })
-    };
+    // Fetch reps
+    const { data: reps, error: repsError } = await supabase.from('sales_reps').select('id, hubspot_owner_id');
+    if (repsError) throw new Error('Failed to fetch reps: ' + repsError.message);
+
+    for (const rep of reps) {
+      const stats = callMap.get(rep.hubspot_owner_id);
+      await supabase.from('sales_leaderboard').upsert({
+        rep_id: rep.id,
+        call_count: stats?.callCount || 0,
+        total_call_time: stats?.totalDuration || 0,
+      });
+    }
+
+    return res.status(200).json({ message: '✅ Sync completed using cursor-based pagination', totalReps: reps.length });
+
   } catch (error) {
-    console.error('Sync error:', error.message);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: error.message })
-    };
+    console.error('Sync error:', error);
+    return res.status(500).json({ error: error.message || 'Unexpected error' });
   }
-};
+}
