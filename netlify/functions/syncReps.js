@@ -14,15 +14,18 @@ exports.handler = async () => {
     const HUBSPOT_API_KEY = process.env.HUBSPOT_API_KEY;
 
     const res = await fetch(`https://api.hubapi.com/owners/v2/owners?hapikey=${HUBSPOT_API_KEY}`);
-    const owners = await res.json();
+    const data = await res.json();
 
-    if (!Array.isArray(owners)) {
-      throw new Error('HubSpot response malformed: owners is not an array');
+    // DEBUG: Log actual response for inspection
+    console.log('Raw HubSpot response:', JSON.stringify(data, null, 2));
+
+    if (!Array.isArray(data)) {
+      throw new Error(`HubSpot response malformed: owners is not an array\n\n${JSON.stringify(data, null, 2)}`);
     }
 
-    console.log(`Fetched ${owners.length} owners from HubSpot`);
+    console.log(`Fetched ${data.length} owners from HubSpot`);
 
-    for (const owner of owners) {
+    for (const owner of data) {
       await supabase
         .from('reps')
         .upsert({
@@ -33,15 +36,13 @@ exports.handler = async () => {
         });
     }
 
-    console.log(`Finished syncing ${owners.length} reps`);
-
     await supabase.from('sync_logs').insert([
       {
         function: 'syncReps',
         started_at: startedAt,
         ended_at: new Date().toISOString(),
         status: 'OK',
-        message: `Synced ${owners.length} reps`,
+        message: `Synced ${data.length} reps`,
       }
     ]);
 
@@ -51,7 +52,7 @@ exports.handler = async () => {
     };
 
   } catch (error) {
-    console.error('Sync failed', error);
+    console.error('Sync failed', error.message);
 
     await supabase.from('sync_logs').insert([
       {
@@ -65,7 +66,10 @@ exports.handler = async () => {
 
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Sync failed', details: error.message }),
+      body: JSON.stringify({
+        error: 'Sync failed',
+        details: error.message,
+      }),
     };
   }
 };
