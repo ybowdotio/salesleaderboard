@@ -8,68 +8,51 @@ const supabase = createClient(
 
 exports.handler = async () => {
   const startedAt = new Date().toISOString();
-  console.log(`Sync started at ${startedAt}`);
+  console.log(`🔄 Sync started at ${startedAt}`);
 
   try {
-    const HUBSPOT_API_KEY = process.env.HUBSPOT_API_KEY;
+    const res = await fetch('https://api.hubapi.com/crm/v3/owners/', {
+      headers: {
+        Authorization: `Bearer ${process.env.HUBSPOT_PRIVATE_APP_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+    });
 
-    const res = await fetch(`https://api.hubapi.com/owners/v2/owners?hapikey=${HUBSPOT_API_KEY}`);
     const data = await res.json();
 
-    // DEBUG: Log actual response for inspection
-    console.log('Raw HubSpot response:', JSON.stringify(data, null, 2));
+    console.log('📦 Raw HubSpot response:', JSON.stringify(data, null, 2));
 
-    if (!Array.isArray(data)) {
-      throw new Error(`HubSpot response malformed: owners is not an array\n\n${JSON.stringify(data, null, 2)}`);
+    if (!Array.isArray(data.results)) {
+      throw new Error('HubSpot response malformed: owners is not an array');
     }
 
-    console.log(`Fetched ${data.length} owners from HubSpot`);
+    const owners = data.results;
 
-    for (const owner of data) {
+    for (const owner of owners) {
       await supabase
         .from('reps')
         .upsert({
-          hubspot_owner_id: owner.ownerId,
-          name: `${owner.firstName} ${owner.lastName}`,
+          hubspot_owner_id: owner.id,
+          name: `${owner.firstName ?? ''} ${owner.lastName ?? ''}`.trim(),
           email: owner.email,
-          avatar_url: owner.avatarUrl || null,
+          avatar_url: owner.user?.avatarUrl || null,
         });
     }
 
+    console.log(`✅ Finished syncing ${owners.length} reps`);
+
     await supabase.from('sync_logs').insert([
       {
-        function: 'syncReps',
-        started_at: startedAt,
-        ended_at: new Date().toISOString(),
+        last_synced_at: startedAt,
         status: 'OK',
-        message: `Synced ${data.length} reps`,
-      }
+      },
     ]);
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ message: 'Reps synced successfully' }),
+      body: JSON.stringify({ status: 'OK', synced: owners.length }),
     };
+  } catch (err) {
+    console.error('❌ Sync failed', err.message);
 
-  } catch (error) {
-    console.error('Sync failed', error.message);
-
-    await supabase.from('sync_logs').insert([
-      {
-        function: 'syncReps',
-        started_at: startedAt,
-        ended_at: new Date().toISOString(),
-        status: 'ERROR',
-        message: error.message,
-      }
-    ]);
-
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        error: 'Sync failed',
-        details: error.message,
-      }),
-    };
-  }
-};
+    await supabase.from('sync_logs').ins_
