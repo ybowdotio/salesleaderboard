@@ -13,7 +13,7 @@ const HUBSPOT_HEADERS = {
 
 function getTodayDateRange() {
   const now = new Date();
-  const start = new Date(now.setHours(0, 0, 0, 0)).toISOString();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
   const end = new Date().toISOString();
   return { start, end };
 }
