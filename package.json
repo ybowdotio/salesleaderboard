@@ -3,6 +3,14 @@
   "version": "1.0.0",
   "description": "Netlify functions only",
   "type": "module",
+  "main": "netlify/functions/index.js",
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "netlify build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.5",
     "node-fetch": "^2.6.9"
