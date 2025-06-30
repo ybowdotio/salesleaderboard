@@ -1,3 +1,5 @@
+// Netlify Function: syncLeaderboard.js
+
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -20,32 +22,31 @@ exports.handler = async function () {
     let offset = 0;
     const limit = 100;
     const callMap = new Map();
-    let pagesChecked = 0;
-    const maxPages = 3;
 
-    while (hasMore && pagesChecked < maxPages) {
-      console.log(`📦 Fetching page with offset ${offset}`);
+    while (hasMore) {
+      console.log(`Fetching page with offset ${offset}`);
 
       const { data } = await axios.get(`https://api.hubapi.com/engagements/v1/engagements/paged`, {
         headers: { Authorization: `Bearer ${HUBSPOT_TOKEN}` },
         params: { limit, offset }
       });
 
-      console.log(`🔎 Returned ${data.results.length} engagements`);
+      console.log(`Returned ${data.results.length} engagements`);
 
       for (const engagement of data.results) {
-        const { type, timestamp, ownerId, durationMilliseconds } = engagement.engagement;
+        const { type, timestamp, ownerId } = engagement.engagement;
+        const { durationMilliseconds } = engagement.metadata;
 
-        console.log(`➡️ Engagement type: ${type}`);
+        console.log(`Engagement type: ${type}`);
 
         if (type === 'CALL') {
           const callDate = new Date(timestamp);
-          console.log(`📅 Checking call timestamp: ${callDate.toISOString()} vs today: ${todayISO}`);
+          console.log(`Checking call timestamp: ${callDate.toISOString()} vs today: ${todayISO}`);
 
           if (callDate.toISOString() >= todayISO) {
             console.log(`✅ Call matched for today`);
             const repId = ownerId || 'unknown';
-            console.log(`🎯 Matched call by owner ${repId} - duration: ${durationMilliseconds}`);
+            console.log(`Matched call by owner ${repId} - duration: ${durationMilliseconds}`);
 
             if (!durationMilliseconds) {
               console.warn(`⚠️ Call has no duration:`, engagement);
@@ -66,10 +67,9 @@ exports.handler = async function () {
 
       hasMore = data.hasMore;
       offset = data.offset || 0;
-      pagesChecked++;
     }
 
-    console.log("📊 Final callMap entries:");
+    console.log("Final callMap entries:");
     console.log(Array.from(callMap.entries()));
 
     const upsertData = Array.from(callMap.entries()).map(([repId, { callCount, totalDuration }]) => ({
@@ -79,24 +79,12 @@ exports.handler = async function () {
       total_duration: totalDuration
     }));
 
-    console.log("📤 Upsert payload:", upsertData);
+    console.log("Upsert payload:", upsertData);
 
     if (upsertData.length > 0) {
-      const { error } = await supabase.from('leaderboard').upsert(upsertData, {
+      await supabase.from('leaderboard').upsert(upsertData, {
         onConflict: ['rep_id', 'date']
       });
-
-      if (error) {
-        console.error("❌ Supabase error during upsert:", error);
-        return {
-          statusCode: 500,
-          body: JSON.stringify({ error: 'Supabase upsert failed', details: error.message })
-        };
-      }
-
-      console.log("✅ Supabase upsert result: Success");
-    } else {
-      console.log("ℹ️ No upsert performed – no call data found for today.");
     }
 
     return {
@@ -104,7 +92,7 @@ exports.handler = async function () {
       body: JSON.stringify({ message: 'Leaderboard synced successfully' })
     };
   } catch (err) {
-    console.error('❌ Sync error:', err);
+    console.error('Sync error:', err);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: 'Failed to sync leaderboard', details: err.message })
