@@ -7,37 +7,26 @@ const supabase = createClient(
 );
 
 exports.handler = async () => {
+  console.log(`Sync started at ${new Date().toISOString()}`);
+
   const HUBSPOT_API_KEY = process.env.HUBSPOT_API_KEY;
+  const res = await fetch(`https://api.hubapi.com/owners/v2/owners?hapikey=${HUBSPOT_API_KEY}`);
+  const owners = await res.json();
 
-  const res = await fetch('https://api.hubapi.com/crm/v3/owners/', {
-    headers: {
-      Authorization: `Bearer ${HUBSPOT_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  const data = await res.json();
-
-  if (!res.ok) {
-    console.error('Error fetching from HubSpot:', data);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ message: 'HubSpot API error', error: data }),
-    };
-  }
-
-  const owners = data.results || [];
+  console.log(`Fetched ${owners.length} owners from HubSpot`);
 
   for (const owner of owners) {
     await supabase
       .from('reps')
       .upsert({
-        hubspot_owner_id: owner.id,
+        hubspot_owner_id: owner.ownerId,
         name: `${owner.firstName} ${owner.lastName}`,
         email: owner.email,
         avatar_url: owner.avatarUrl || null,
       });
   }
+
+  console.log(`Finished syncing ${owners.length} reps`);
 
   return {
     statusCode: 200,
