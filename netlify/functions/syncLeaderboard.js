@@ -7,7 +7,7 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const getTodayKey = () => {
+const getToday = () => {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   return now.toISOString().slice(0, 10);
@@ -15,51 +15,55 @@ const getTodayKey = () => {
 
 exports.handler = async function () {
   try {
-    const today = getTodayKey();
+    const today = getToday();
 
-    // 1. Get or create tracker row
-    let { data: trackerRow } = await supabase
+    // Load or initialize sync tracker
+    let { data: trackerRow, error: trackerErr } = await supabase
       .from('sync_tracker')
       .select('*')
       .eq('date', today)
       .single();
 
     if (!trackerRow) {
-      const { data, error } = await supabase.from('sync_tracker').insert([
+      const insertResult = await supabase.from('sync_tracker').insert([
         { date: today, offset: 0, completed: false }
-      ]);
-      trackerRow = data?.[0];
+      ]).select().single();
+
+      if (insertResult.error) {
+        throw new Error('Failed to create sync_tracker row: ' + insertResult.error.message);
+      }
+
+      trackerRow = insertResult.data;
+    }
+
+    if (!trackerRow) {
+      throw new Error('sync_tracker row missing or failed to create');
     }
 
     if (trackerRow.completed) {
-      console.log('✅ Sync already completed today.');
+      console.log(`✅ Sync already completed for today.`);
       return {
         statusCode: 200,
-        body: JSON.stringify({ message: 'Sync already complete' })
+        body: JSON.stringify({ message: 'Already synced for today' })
       };
     }
 
     const limit = 100;
     const offset = trackerRow.offset || 0;
-
-    // 2. Fetch page of engagements from HubSpot
-    const { data } = await axios.get(
-      'https://api.hubapi.com/engagements/v1/engagements/paged',
-      {
-        headers: { Authorization: `Bearer ${HUBSPOT_TOKEN}` },
-        params: { limit, offset }
-      }
-    );
-
-    console.log(`🔄 Pulled ${data.results.length} engagements at offset ${offset}`);
-
+    const todayISO = new Date(today).toISOString();
     const callMap = new Map();
 
-    const todayISO = new Date(today).toISOString();
+    console.log(`🔄 Pulling 100 engagements at offset ${offset}`);
+
+    const { data } = await axios.get(`https://api.hubapi.com/engagements/v1/engagements/paged`, {
+      headers: { Authorization: `Bearer ${HUBSPOT_TOKEN}` },
+      params: { limit, offset }
+    });
+
+    console.log(`📦 Returned ${data.results.length} engagements`);
 
     for (const engagement of data.results) {
       const { type, timestamp, ownerId, durationMilliseconds } = engagement.engagement;
-
       if (type === 'CALL') {
         const callDate = new Date(timestamp);
         if (callDate.toISOString() >= todayISO) {
@@ -74,7 +78,6 @@ exports.handler = async function () {
       }
     }
 
-    // 3. Upsert call stats to leaderboard
     const upsertData = Array.from(callMap.entries()).map(([repId, { callCount, totalDuration }]) => ({
       rep_id: repId,
       date: today,
@@ -86,30 +89,28 @@ exports.handler = async function () {
       await supabase.from('leaderboard').upsert(upsertData, {
         onConflict: ['rep_id', 'date']
       });
+      console.log(`✅ Upserted ${upsertData.length} rows to leaderboard`);
     }
 
-    // 4. Update sync_tracker offset or mark as complete
-    const nextOffset = data.offset || 0;
-    const completed = !data.hasMore;
+    // Update sync_tracker offset and completion
+    const newOffset = data.offset || 0;
+    const syncComplete = !data.hasMore;
 
     await supabase.from('sync_tracker').update({
-      offset: nextOffset,
-      completed
+      offset: newOffset,
+      completed: syncComplete
     }).eq('date', today);
 
     return {
       statusCode: 200,
-      body: JSON.stringify({
-        message: 'Sync step completed',
-        nextOffset,
-        completed
-      })
+      body: JSON.stringify({ message: 'Sync completed', nextOffset: newOffset, completed: syncComplete })
     };
+
   } catch (err) {
     console.error('❌ Sync error:', err);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Failed sync step', details: err.message })
+      body: JSON.stringify({ error: 'Failed to sync leaderboard', details: err.message })
     };
   }
 };
