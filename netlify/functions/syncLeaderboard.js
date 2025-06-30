@@ -1,16 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
-import fetch from 'node-fetch';
+import { fetch } from 'undici'; // ✅ replace node-fetch
 
-// Initialize Supabase
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// HubSpot private app token
 const HUBSPOT_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 
-exports.handler = async function () {
+export const handler = async () => {
   try {
     let hasMore = true;
     let after = undefined;
@@ -35,23 +33,20 @@ exports.handler = async function () {
       const data = await res.json();
       const calls = data.results;
 
-      // Process and upsert calls
       for (const call of calls) {
         const { id, properties } = call;
 
-        await supabase
-          .from('calls')
-          .upsert({
-            id,
-            hs_call_title: properties.hs_call_title,
-            hs_call_duration: Number(properties.hs_call_duration) || 0,
-            hs_call_direction: properties.hs_call_direction,
-            hs_call_status: properties.hs_call_status,
-            hs_timestamp: properties.hs_timestamp,
-            hubspot_owner_id: properties.hubspot_owner_id,
-            hs_call_from_number: properties.hs_call_from_number,
-            hs_call_to_number: properties.hs_call_to_number
-          });
+        await supabase.from('calls').upsert({
+          id,
+          hs_call_title: properties.hs_call_title,
+          hs_call_duration: Number(properties.hs_call_duration) || 0,
+          hs_call_direction: properties.hs_call_direction,
+          hs_call_status: properties.hs_call_status,
+          hs_timestamp: properties.hs_timestamp,
+          hubspot_owner_id: properties.hubspot_owner_id,
+          hs_call_from_number: properties.hs_call_from_number,
+          hs_call_to_number: properties.hs_call_to_number
+        });
       }
 
       totalSynced += calls.length;
