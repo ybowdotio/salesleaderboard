@@ -9,23 +9,36 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const getTodayISOString = () => {
   const now = new Date();
-  now.setHours(0, 0, 0, 0);
+  now.setUTCHours(0, 0, 0, 0); // Ensures midnight UTC
   return now.toISOString();
 };
 
 exports.handler = async function () {
   try {
     const todayISO = getTodayISOString();
+    const todayDate = todayISO.slice(0, 10);
+
+    // Get current sync offset
+    const { data: trackerData, error: trackerError } = await supabase
+      .from('sync_tracker')
+      .select('*')
+      .eq('date', todayDate)
+      .single();
+
+    if (trackerError && trackerError.code !== 'PGRST116') {
+      throw trackerError;
+    }
+
+    const currentOffset = trackerData?.offset || 0;
     const callMap = new Map();
 
-    let hasMore = true;
-    let offset = 0;
-    const limit = 100;
-
-    console.log(`🔄 Pulling ${limit} engagements at offset ${offset}`);
-    const { data } = await axios.get(`https://api.hubapi.com/engagements/v1/engagements/paged`, {
+    console.log(`🔄 Pulling 100 engagements at offset ${currentOffset}`);
+    const { data } = await axios.get('https://api.hubapi.com/engagements/v1/engagements/paged', {
       headers: { Authorization: `Bearer ${HUBSPOT_TOKEN}` },
-      params: { limit, offset }
+      params: {
+        limit: 100,
+        offset: currentOffset,
+      },
     });
 
     console.log(`📦 Returned ${data.results.length} engagements`);
@@ -33,16 +46,23 @@ exports.handler = async function () {
     for (const engagement of data.results) {
       const { type, timestamp, ownerId, durationMilliseconds } = engagement.engagement;
 
-      if (type === 'CALL') {
+      console.log(`🔍 Type: ${type}`);
+      console.log(`🕓 Timestamp: ${new Date(timestamp).toISOString()}`);
+      console.log(`👤 Owner: ${ownerId}`);
+      console.log(`⏱️ Duration: ${durationMilliseconds}`);
+
+      if (type?.toUpperCase() === 'CALL') {
         const callDate = new Date(timestamp);
         if (callDate.toISOString() >= todayISO) {
-          const repId = ownerId;
+          const repId = ownerId || 'unknown';
+
           if (!callMap.has(repId)) {
             callMap.set(repId, {
               callCount: 0,
               totalDuration: 0,
             });
           }
+
           const entry = callMap.get(repId);
           entry.callCount++;
           entry.totalDuration += durationMilliseconds || 0;
@@ -51,30 +71,42 @@ exports.handler = async function () {
     }
 
     const upsertData = Array.from(callMap.entries()).map(([repId, { callCount, totalDuration }]) => ({
-      hubspot_owner_id: repId,
+      rep_id: repId,
+      date: todayDate,
       call_count: callCount,
-      total_call_time_seconds: Math.floor(totalDuration / 1000),
-      avg_call_length_seconds: callCount > 0 ? Math.floor(totalDuration / callCount / 1000) : 0
+      total_duration: totalDuration,
     }));
 
-    console.log("✅ Upserting this data to Supabase leaderboard:");
-    console.log(upsertData);
+    console.log("📝 Upsert payload:", upsertData);
 
     if (upsertData.length > 0) {
       await supabase.from('leaderboard').upsert(upsertData, {
-        onConflict: ['hubspot_owner_id']
+        onConflict: ['rep_id', 'date'],
       });
     }
 
+    // Track sync progress
+    const nextOffset = data.offset || 0;
+    const completed = !data.hasMore;
+
+    await supabase.from('sync_tracker').upsert({
+      date: todayDate,
+      offset: nextOffset,
+      completed,
+    }, {
+      onConflict: ['date'],
+    });
+
     return {
       statusCode: 200,
-      body: JSON.stringify({ message: 'Sync completed' })
+      body: JSON.stringify({ message: 'Sync completed', nextOffset, completed }),
     };
+
   } catch (err) {
     console.error('❌ Sync error:', err);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Sync failed', details: err.message })
+      body: JSON.stringify({ error: 'Failed to sync leaderboard', details: err.message }),
     };
   }
 };
