@@ -9,7 +9,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const getTodayISOString = () => {
   const now = new Date();
-  now.setHours(0, 0, 0, 0); // midnight UTC
+  now.setHours(0, 0, 0, 0);
   return now.toISOString();
 };
 
@@ -23,7 +23,7 @@ exports.handler = async function () {
     let pagesChecked = 0;
     const maxPages = 3;
 
-    while (hasMore) {
+    while (hasMore && pagesChecked < maxPages) {
       console.log(`📦 Fetching page with offset ${offset}`);
 
       const { data } = await axios.get(`https://api.hubapi.com/engagements/v1/engagements/paged`, {
@@ -40,12 +40,12 @@ exports.handler = async function () {
 
         if (type === 'CALL') {
           const callDate = new Date(timestamp);
-          console.log(`📅 Call timestamp: ${callDate.toISOString()} vs today: ${todayISO}`);
+          console.log(`📅 Checking call timestamp: ${callDate.toISOString()} vs today: ${todayISO}`);
 
           if (callDate.toISOString() >= todayISO) {
             console.log(`✅ Call matched for today`);
             const repId = ownerId || 'unknown';
-            console.log(`👤 Owner ${repId}, duration: ${durationMilliseconds}`);
+            console.log(`🎯 Matched call by owner ${repId} - duration: ${durationMilliseconds}`);
 
             if (!durationMilliseconds) {
               console.warn(`⚠️ Call has no duration:`, engagement);
@@ -67,10 +67,6 @@ exports.handler = async function () {
       hasMore = data.hasMore;
       offset = data.offset || 0;
       pagesChecked++;
-      if (pagesChecked >= maxPages) {
-        console.warn(`⛔ Reached maxPages limit of ${maxPages}. Stopping pagination.`);
-        break;
-      }
     }
 
     console.log("📊 Final callMap entries:");
@@ -86,17 +82,21 @@ exports.handler = async function () {
     console.log("📤 Upsert payload:", upsertData);
 
     if (upsertData.length > 0) {
-      const { data: upsertResult, error: upsertError } = await supabase
-        .from('leaderboard')
-        .upsert(upsertData, {
-          onConflict: ['rep_id', 'date']
-        });
+      const { error } = await supabase.from('leaderboard').upsert(upsertData, {
+        onConflict: ['rep_id', 'date']
+      });
 
-      if (upsertError) {
-        console.error('❌ Supabase upsert error:', upsertError);
-      } else {
-        console.log('✅ Supabase upsert result:', upsertResult);
+      if (error) {
+        console.error("❌ Supabase error during upsert:", error);
+        return {
+          statusCode: 500,
+          body: JSON.stringify({ error: 'Supabase upsert failed', details: error.message })
+        };
       }
+
+      console.log("✅ Supabase upsert result: Success");
+    } else {
+      console.log("ℹ️ No upsert performed – no call data found for today.");
     }
 
     return {
@@ -104,7 +104,7 @@ exports.handler = async function () {
       body: JSON.stringify({ message: 'Leaderboard synced successfully' })
     };
   } catch (err) {
-    console.error('🔥 Sync error:', err);
+    console.error('❌ Sync error:', err);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: 'Failed to sync leaderboard', details: err.message })
