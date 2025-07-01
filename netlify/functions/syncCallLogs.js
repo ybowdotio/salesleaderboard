@@ -49,8 +49,11 @@ exports.handler = async () => {
           continue;
         }
 
-        // Log full metadata for inspection
+        // Log full metadata and call object for inspection
         console.debug(`Call ID: ${engagement.id}, Full Metadata:`, JSON.stringify(metadata, null, 2));
+        if (!metadata.timestamp) {
+          console.debug(`Call ID: ${engagement.id}, Full Call Object:`, JSON.stringify(call, null, 2));
+        }
 
         const timestampISO = metadata.timestamp
           ? new Date(metadata.timestamp).toISOString()
