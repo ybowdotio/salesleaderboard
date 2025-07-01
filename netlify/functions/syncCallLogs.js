@@ -19,11 +19,39 @@ exports.handler = async () => {
   try {
     // Calculate current month start
     const now = new Date();
-    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const startOfMonthUnix = startOfMonth.getTime();
 
-    const callsResponse = await axios.get('https://api.hubapi.com/crm/v3/objects/calls?limit=10&properties=hs_timestamp,direction,hs_call_duration,hubspot_owner_id,hs_call_title', {
-      headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
-    });
+    const callsResponse = await axios.post(
+      'https://api.hubapi.com/crm/v3/objects/calls/search',
+      {
+        filterGroups: [
+          {
+            filters: [
+              {
+                propertyName: 'hs_timestamp',
+                operator: 'GTE',
+                value: startOfMonthUnix
+              }
+            ]
+          }
+        ],
+        limit: 10,
+        properties: [
+          'hs_timestamp',
+          'direction',
+          'hs_call_duration',
+          'hubspot_owner_id',
+          'hs_call_title'
+        ]
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
 
     const calls = callsResponse.data.results;
     console.info(`Fetched ${calls.length} calls`);
@@ -55,7 +83,7 @@ exports.handler = async () => {
       const timestampDate = timestampISO.split('T')[0];
       const timestampYear = timestamp.getFullYear();
 
-      if (timestampISO < startOfMonth) {
+      if (timestamp < startOfMonth) {
         console.info(`Skipping call before start of month. Call ID: ${call.id}`);
         continue;
       }
