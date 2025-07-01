@@ -17,6 +17,7 @@ exports.handler = async (event) => {
       };
     }
 
+    // Exchange authorization code for tokens
     const tokenRes = await axios.post('https://api.hubapi.com/oauth/v1/token', null, {
       params: {
         grant_type: 'authorization_code',
@@ -32,6 +33,7 @@ exports.handler = async (event) => {
 
     const { access_token, refresh_token, expires_in } = tokenRes.data;
 
+    // Upsert tokens into Supabase
     const { error } = await supabase.from('hubspot_tokens').upsert({
       id: 1,
       access_token,
@@ -40,13 +42,14 @@ exports.handler = async (event) => {
     });
 
     if (error) {
-      console.error('Supabase insert error:', error);
+      console.error('❌ Supabase upsert error:', error);
       return {
         statusCode: 500,
         body: JSON.stringify({ error: 'Failed to store tokens' }),
       };
     }
 
+    console.log('✅ Token upsert successful');
     return {
       statusCode: 200,
       body: '✅ HubSpot authorization successful. You can close this window.',
