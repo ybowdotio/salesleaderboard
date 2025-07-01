@@ -8,121 +8,107 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-exports.handler = async () => {
-  if (!HUBSPOT_PRIVATE_APP_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    console.error("Missing environment variables.");
-    return { statusCode: 500, body: 'Missing environment variables' };
-  }
-
-  const hubspot = axios.create({
-    baseURL: 'https://api.hubapi.com',
-    headers: {
-      Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
+// Get start of the current month in ISO string
+const getStartOfMonth = () => {
   const now = new Date();
-  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime().toString();
+  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+};
 
-  const callFilter = {
-    propertyName: "hs_call_direction",
-    operator: "HAS_PROPERTY",
-  };
-
-  const dateFilter = {
-    propertyName: "hs_timestamp",
-    operator: "GTE",
-    value: firstDayOfMonth,
-  };
-
-  const requestBody = {
-    filterGroups: [{ filters: [callFilter, dateFilter] }],
-    sorts: [{ propertyName: "hs_timestamp", direction: "DESCENDING" }],
-    properties: [
-      "hs_call_title",
-      "hs_call_duration",
-      "hs_call_direction",
-      "hs_timestamp",
-      "hubspot_owner_id",
-      "hs_call_disposition",
-      "hs_call_from_number",
-      "hs_call_to_number"
-    ],
-    limit: 100,
-  };
-
+exports.handler = async function () {
   try {
-    const { data } = await hubspot.post('/crm/v3/objects/calls/search', requestBody);
-    const calls = data.results;
+    console.info("HubSpot token exists?", !!HUBSPOT_PRIVATE_APP_TOKEN);
+    console.info("Supabase URL exists?", !!SUPABASE_URL);
+    console.info("Supabase key exists?", !!SUPABASE_SERVICE_ROLE_KEY);
 
-const enrichedCalls = (
-  await Promise.all(
-    calls.map(async (call) => {
-      const contactId = call.properties.hs_call_to_object_id;
-      const ownerId = call.properties.hubspot_owner_id;
-      const timestamp = parseInt(call.properties.hs_timestamp || "0", 10);
-      const direction = call.properties.hs_call_direction || null;
-      const duration = parseInt(call.properties.hs_call_duration || "0", 10);
-      const callId = call.id;
+    if (!HUBSPOT_PRIVATE_APP_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      return { statusCode: 500, body: "Missing environment variables" };
+    }
 
-      // Skip if no contactId
-      if (!contactId) return null;
+    const headers = {
+      Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
+      "Content-Type": "application/json",
+    };
 
-      // Get contact name
-      const contactRes = await axios.get(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname`, {
-        headers,
-      });
-      const cp = contactRes.data.properties;
-      const contact_name = [cp.firstname, cp.lastname].filter(Boolean).join(' ') || 'Unknown';
+    // Step 1: Fetch contacts
+    const contactsResponse = await axios.get(
+      `https://api.hubapi.com/crm/v3/objects/contacts?limit=10&properties=firstname,lastname`,
+      { headers }
+    );
 
-      // Get owner name
-      let owner_name = 'Unknown';
-      if (ownerId) {
-        const ownerRes = await axios.get(`https://api.hubapi.com/crm/v3/owners/${ownerId}`, {
-          headers,
+    const contacts = contactsResponse.data.results || [];
+    console.info(`Fetched ${contacts.length} contacts`);
+
+    // Map contactId -> contactName
+    const contactMap = {};
+    contacts.forEach(contact => {
+      const props = contact.properties || {};
+      const fullName = [props.firstname, props.lastname].filter(Boolean).join(" ");
+      contactMap[contact.id] = fullName || null;
+    });
+
+    const startOfMonth = getStartOfMonth();
+    const calls = [];
+
+    for (const contact of contacts) {
+      const contactId = contact.id;
+
+      // Step 2: Fetch calls for each contact
+      const callsResponse = await axios.get(
+        `https://api.hubapi.com/engagements/v1/engagements/associated/contact/${contactId}/paged?limit=100`,
+        { headers }
+      );
+
+      const contactCalls = callsResponse.data.results || [];
+
+      for (const call of contactCalls) {
+        const engagement = call.engagement;
+        const metadata = call.metadata;
+
+        if (engagement.type !== "CALL") continue;
+
+        const timestamp = new Date(engagement.timestamp);
+        if (timestamp.toISOString() < startOfMonth) continue;
+
+        const ownerId = engagement.ownerId;
+        const ownerResponse = await axios.get(
+          `https://api.hubapi.com/crm/v3/owners/${ownerId}`,
+          { headers }
+        );
+        const ownerName = ownerResponse.data.fullName || null;
+
+        calls.push({
+          call_id: engagement.id,
+          contact_id: contactId,
+          contact_name: contactMap[contactId] || null,
+          owner_id: ownerId || null,
+          owner_name: ownerName,
+          direction: metadata?.fromNumber ? "OUTBOUND" : "INBOUND",
+          duration_seconds: metadata.durationMilliseconds
+            ? Math.floor(metadata.durationMilliseconds / 1000)
+            : 0,
+          timestamp: timestamp.toISOString(),
+          date_only: timestamp.toISOString().split("T")[0],
         });
-        owner_name = ownerRes.data.firstName + ' ' + ownerRes.data.lastName;
       }
+    }
 
-      const timestamp_iso = new Date(timestamp).toISOString();
-      const call_date = timestamp_iso.split('T')[0];
+    console.info(`Upserting ${calls.length} call(s) into Supabase...`);
 
-      return {
-        call_id: callId,
-        contact_id: contactId,
-        owner_id: ownerId || null,
-        timestamp,
-        direction,
-        duration_seconds: duration,
-        contact_name,
-        owner_name,
-        timestamp_iso,
-        call_date,
-      };
-    })
-  )
-).filter(Boolean); // remove skipped nulls
-
-    // Insert or update in Supabase
-    const { data: upserted, error } = await supabase
-      .from('calls')
-      .upsert(enrichedCalls, { onConflict: ['call_id'] });
+    const { error } = await supabase.from("calls").upsert(calls, {
+      onConflict: ["call_id"],
+    });
 
     if (error) {
-      console.error('Upsert error:', error);
-      return { statusCode: 500, body: 'Supabase upsert failed' };
+      console.error("Upsert error:", error);
+      return { statusCode: 500, body: "Failed to upsert call logs" };
     }
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ inserted: enrichedCalls.length }),
+      body: `Successfully synced ${calls.length} call logs for current month`,
     };
-  } catch (err) {
-    console.error('Unexpected error:', err.message);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: err.message }),
-    };
+  } catch (error) {
+    console.error("Error during sync:", error);
+    return { statusCode: 500, body: "Error syncing call logs" };
   }
 };
