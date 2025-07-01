@@ -55,9 +55,14 @@ exports.handler = async () => {
           console.debug(`Call ID: ${engagement.id}, Full Call Object:`, JSON.stringify(call, null, 2));
         }
 
-        const timestampISO = metadata.timestamp
-          ? new Date(metadata.timestamp).toISOString()
-          : null;
+        let rawTimestamp = metadata.timestamp ?? engagement.timestamp;
+        let timestampISO = null;
+
+        try {
+          timestampISO = rawTimestamp ? new Date(rawTimestamp).toISOString() : null;
+        } catch (err) {
+          console.warn(`Failed to parse timestamp for Call ID: ${engagement.id}. Raw: ${rawTimestamp}`);
+        }
 
         if (!timestampISO) {
           console.warn(`Skipping call with invalid timestamp. Call ID: ${engagement.id}`);
