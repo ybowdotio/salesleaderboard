@@ -17,70 +17,80 @@ exports.handler = async () => {
   }
 
   try {
-    // Fetch contacts
-    const contactsResponse = await axios.get('https://api.hubapi.com/crm/v3/objects/contacts?limit=10', {
+    // Calculate current month start
+    const now = new Date();
+    const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+
+    const callsResponse = await axios.get('https://api.hubapi.com/crm/v3/objects/calls?limit=10&properties=hs_timestamp,direction,hs_call_duration,hubspot_owner_id,hs_call_title', {
       headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
     });
 
-    const contacts = contactsResponse.data.results;
-    console.info(`Fetched ${contacts.length} contacts`);
+    const calls = callsResponse.data.results;
+    console.info(`Fetched ${calls.length} calls`);
 
-    let allCalls = [];
+    const allCalls = [];
 
-    for (const contact of contacts) {
-      const contactId = contact.id;
-      const contactName = contact.properties.firstname + ' ' + contact.properties.lastname;
+    for (const call of calls) {
+      const props = call.properties || {};
+      const timestampRaw = props.hs_timestamp;
 
-      const engagementsResponse = await axios.get(`https://api.hubapi.com/engagements/v1/engagements/associated/contact/${contactId}/paged?limit=100`, {
-        headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
-      });
-
-      const engagements = engagementsResponse.data.results;
-      const calls = engagements.filter(e => e.engagement.type === 'CALL');
-
-      for (const call of calls) {
-        const engagement = call.engagement;
-        const metadata = call.metadata || {};
-
-        const resolvedContactId = engagement.contactId || contactId;
-
-        if (!resolvedContactId) {
-          console.warn(`Skipping call with missing contactId. Call ID: ${engagement.id}`);
-          continue;
-        }
-
-        // Log full metadata and call object for inspection
-        console.debug(`Call ID: ${engagement.id}, Full Metadata:`, JSON.stringify(metadata, null, 2));
-        if (!metadata.timestamp) {
-          console.debug(`Call ID: ${engagement.id}, Full Call Object:`, JSON.stringify(call, null, 2));
-        }
-
-        let rawTimestamp = metadata.timestamp ?? engagement.timestamp;
-        let timestampISO = null;
-
-        try {
-          if (!rawTimestamp || isNaN(Number(rawTimestamp))) {
-            throw new Error(`Invalid timestamp: ${rawTimestamp}`);
-          }
-          timestampISO = new Date(Number(rawTimestamp)).toISOString();
-        } catch (err) {
-          console.warn(`Skipping call with invalid timestamp. Call ID: ${engagement.id}`);
-          continue;
-        }
-
-        allCalls.push({
-          call_id: engagement.id,
-          contact_id: resolvedContactId,
-          owner_id: engagement.ownerId,
-          duration_seconds: metadata.durationMilliseconds ? Math.floor(metadata.durationMilliseconds / 1000) : null,
-          direction: metadata.fromNumber ? 'OUTBOUND' : 'INBOUND',
-          contact_name: contactName,
-          owner_name: engagement.ownerId, // Replace with actual lookup if needed
-          timestamp_iso: timestampISO,
-          timestamp_date: timestampISO.split('T')[0],
-          timestamp_year: new Date(timestampISO).getFullYear()
-        });
+      if (!timestampRaw || isNaN(Number(timestampRaw))) {
+        console.warn(`Skipping call with invalid timestamp. Call ID: ${call.id}`);
+        continue;
       }
+
+      const timestamp = new Date(Number(timestampRaw));
+      const timestampISO = timestamp.toISOString();
+      const timestampDate = timestampISO.split('T')[0];
+      const timestampYear = timestamp.getFullYear();
+
+      if (timestampISO < startOfMonth) {
+        console.info(`Skipping call before start of month. Call ID: ${call.id}`);
+        continue;
+      }
+
+      // Fetch contact association
+      const associations = call.associations || {};
+      const contactId = associations.contacts?.results?.[0]?.id;
+      let contactName = null;
+
+      if (contactId) {
+        try {
+          const contactRes = await axios.get(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname`, {
+            headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
+          });
+          const cp = contactRes.data.properties;
+          contactName = `${cp.firstname || ''} ${cp.lastname || ''}`.trim();
+        } catch (err) {
+          console.warn(`Failed to fetch contact name for ID: ${contactId}`);
+        }
+      }
+
+      // Fetch owner
+      let ownerName = null;
+      if (props.hubspot_owner_id) {
+        try {
+          const ownerRes = await axios.get(`https://api.hubapi.com/crm/v3/owners/${props.hubspot_owner_id}`, {
+            headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
+          });
+          ownerName = ownerRes.data.fullName;
+        } catch (err) {
+          console.warn(`Failed to fetch owner name for ID: ${props.hubspot_owner_id}`);
+        }
+      }
+
+      allCalls.push({
+        call_id: call.id,
+        contact_id: contactId || null,
+        owner_id: props.hubspot_owner_id || null,
+        duration_seconds: props.hs_call_duration ? parseInt(props.hs_call_duration) : null,
+        direction: props.direction || null,
+        contact_name: contactName || null,
+        owner_name: ownerName || null,
+        timestamp_iso: timestampISO,
+        timestamp_date: timestampDate,
+        timestamp_year: timestampYear
+      });
     }
 
     if (allCalls.length === 0) {
