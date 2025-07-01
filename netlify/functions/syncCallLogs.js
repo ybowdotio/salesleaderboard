@@ -42,7 +42,9 @@ exports.handler = async () => {
         const engagement = call.engagement;
         const metadata = call.metadata || {};
 
-        if (!engagement.contactId) {
+        const resolvedContactId = engagement.contactId || contactId;
+
+        if (!resolvedContactId) {
           console.warn(`Skipping call with missing contactId. Call ID: ${engagement.id}`);
           continue;
         }
@@ -58,7 +60,7 @@ exports.handler = async () => {
 
         allCalls.push({
           call_id: engagement.id,
-          contact_id: engagement.contactId,
+          contact_id: resolvedContactId,
           owner_id: engagement.ownerId,
           duration_seconds: metadata.durationMilliseconds ? Math.floor(metadata.durationMilliseconds / 1000) : null,
           direction: metadata.fromNumber ? 'OUTBOUND' : 'INBOUND',
