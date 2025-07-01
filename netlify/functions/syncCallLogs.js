@@ -49,6 +49,8 @@ exports.handler = async () => {
           continue;
         }
 
+        console.debug(`Call ID: ${engagement.id}, Raw Timestamp:`, metadata.timestamp);
+
         const timestampISO = metadata.timestamp
           ? new Date(metadata.timestamp).toISOString()
           : null;
