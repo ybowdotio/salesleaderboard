@@ -66,8 +66,15 @@ exports.handler = async function () {
 
         if (engagement.type !== "CALL") continue;
 
-        const timestamp = new Date(engagement.timestamp);
-        if (timestamp.toISOString() < startOfMonth) continue;
+const timestamp = new Date(parseInt(engagement.timestamp));
+// 🐛 DEBUG LOGGING — log actual call timestamps and comparison threshold
+console.log(`Call ID: ${engagement.id}`);
+console.log(`Call Timestamp: ${timestamp.toISOString()}`);
+console.log(`Start of Month: ${startOfMonth}`);
+if (timestamp.toISOString() < startOfMonth) {
+  console.log(`Skipping call ${engagement.id} — before this month`);
+  continue;
+}
 
         const ownerId = engagement.ownerId;
         const ownerResponse = await axios.get(
