@@ -43,7 +43,8 @@ exports.handler = async () => {
           'hs_call_duration',
           'hubspot_owner_id',
           'hs_call_title'
-        ]
+        ],
+        associations: ['contacts']
       },
       {
         headers: {
