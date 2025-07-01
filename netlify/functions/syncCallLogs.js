@@ -59,12 +59,11 @@ exports.handler = async () => {
         let timestampISO = null;
 
         try {
-          timestampISO = rawTimestamp ? new Date(rawTimestamp).toISOString() : null;
+          if (!rawTimestamp || isNaN(Number(rawTimestamp))) {
+            throw new Error(`Invalid timestamp: ${rawTimestamp}`);
+          }
+          timestampISO = new Date(Number(rawTimestamp)).toISOString();
         } catch (err) {
-          console.warn(`Failed to parse timestamp for Call ID: ${engagement.id}. Raw: ${rawTimestamp}`);
-        }
-
-        if (!timestampISO) {
           console.warn(`Skipping call with invalid timestamp. Call ID: ${engagement.id}`);
           continue;
         }
