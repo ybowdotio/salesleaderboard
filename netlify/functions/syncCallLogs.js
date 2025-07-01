@@ -17,7 +17,6 @@ exports.handler = async () => {
   }
 
   try {
-    // Calculate current month start
     const now = new Date();
     const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const startOfMonthUnix = startOfMonth.getTime();
@@ -43,8 +42,7 @@ exports.handler = async () => {
           'hs_call_duration',
           'hubspot_owner_id',
           'hs_call_title'
-        ],
-        associations: ['contacts']
+        ]
       },
       {
         headers: {
@@ -56,7 +54,6 @@ exports.handler = async () => {
 
     const calls = callsResponse.data.results;
     console.info(`Fetched ${calls.length} calls`);
-
     const allCalls = [];
 
     for (const call of calls) {
@@ -89,9 +86,20 @@ exports.handler = async () => {
         continue;
       }
 
-      // Fetch contact association
-      const associations = call.associations || {};
-      const contactId = associations.contacts?.results?.[0]?.id;
+      // 🔄 Fetch contact association explicitly
+      let contactId = null;
+      try {
+        const assocRes = await axios.get(
+          `https://api.hubapi.com/crm/v4/objects/calls/${call.id}/associations/contacts`,
+          {
+            headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
+          }
+        );
+        contactId = assocRes.data?.results?.[0]?.id;
+      } catch (err) {
+        console.warn(`Failed to fetch contact association for call ID: ${call.id}`);
+      }
+
       if (!contactId) {
         console.warn(`Skipping call without contact ID. Call ID: ${call.id}`);
         continue;
@@ -99,22 +107,27 @@ exports.handler = async () => {
 
       let contactName = null;
       try {
-        const contactRes = await axios.get(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname`, {
-          headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
-        });
+        const contactRes = await axios.get(
+          `https://api.hubapi.com/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname`,
+          {
+            headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
+          }
+        );
         const cp = contactRes.data.properties;
         contactName = `${cp.firstname || ''} ${cp.lastname || ''}`.trim();
       } catch (err) {
         console.warn(`Failed to fetch contact name for ID: ${contactId}`);
       }
 
-      // Fetch owner
       let ownerName = null;
       if (props.hubspot_owner_id) {
         try {
-          const ownerRes = await axios.get(`https://api.hubapi.com/crm/v3/owners/${props.hubspot_owner_id}`, {
-            headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
-          });
+          const ownerRes = await axios.get(
+            `https://api.hubapi.com/crm/v3/owners/${props.hubspot_owner_id}`,
+            {
+              headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
+            }
+          );
           ownerName = ownerRes.data.fullName;
         } catch (err) {
           console.warn(`Failed to fetch owner name for ID: ${props.hubspot_owner_id}`);
