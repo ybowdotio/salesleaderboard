@@ -1,42 +1,52 @@
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
+// ✅ New environment variable name to avoid Netlify tree-shaking
 const HUBSPOT_APP_TOKEN = process.env.HUBSPOT_APP_TOKEN;
-const HUBSPOT_API_KEY = HUBSPOT_APP_TOKEN || process.env.HUBSPOT_API_KEY;
+
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 exports.handler = async function () {
-  // ✅ Netlify will retain this env var now
-  console.log('HubSpot token exists?', !!process.env.HUBSPOT_PRIVATE_APP_TOKEN);
-
   try {
-    // Step 1: Fetch Contacts (limited to 10 for now)
+    if (!HUBSPOT_APP_TOKEN) {
+      throw new Error('Missing HubSpot token. Check environment variables.');
+    }
+
+    // Step 1: Fetch contacts (limit 10 for testing)
     const contactsResp = await axios.get(
-      `https://api.hubapi.com/crm/v3/objects/contacts?limit=10&properties=firstname,lastname,hubspot_owner_id`,
-      { headers: { Authorization: `Bearer ${HUBSPOT_API_KEY}` } }
+      'https://api.hubapi.com/crm/v3/objects/contacts?limit=10&properties=firstname,lastname,hubspot_owner_id',
+      {
+        headers: {
+          Authorization: `Bearer ${HUBSPOT_APP_TOKEN}`,
+        },
+      }
     );
 
     const contacts = contactsResp.data.results;
     const allCallRecords = [];
 
-    // Step 2: For each contact, fetch their engagements
+    // Step 2: For each contact, fetch associated engagements
     for (const contact of contacts) {
       const contactId = contact.id;
       const ownerId = contact.properties?.hubspot_owner_id || null;
 
       const engagementsResp = await axios.get(
         `https://api.hubapi.com/engagements/v1/engagements/associated/contact/${contactId}/paged`,
-        { headers: { Authorization: `Bearer ${HUBSPOT_API_KEY}` } }
+        {
+          headers: {
+            Authorization: `Bearer ${HUBSPOT_APP_TOKEN}`,
+          },
+        }
       );
 
       const calls = (engagementsResp.data.results || []).filter(
         (e) => e.engagement?.type === 'CALL'
       );
 
-      const cleaned = calls.map((call) => ({
+      const cleanedCalls = calls.map((call) => ({
         contact_id: contactId,
         owner_id: ownerId,
         call_id: call.engagement.id,
@@ -45,7 +55,7 @@ exports.handler = async function () {
         direction: call.engagement.metadata?.fromNumber ? 'outbound' : 'inbound',
       }));
 
-      allCallRecords.push(...cleaned);
+      allCallRecords.push(...cleanedCalls);
     }
 
     // Step 3: Upsert into Supabase
@@ -60,7 +70,7 @@ exports.handler = async function () {
       body: JSON.stringify({ inserted: data.length }),
     };
   } catch (err) {
-    console.error('Error syncing call logs:', err);
+    console.error('Error syncing call logs:', err.message);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: err.message }),
