@@ -1,9 +1,7 @@
 [build]
   publish = "."
-  command = ""
+  command = ""  # leave blank or "npm run build" if needed later
 
 [functions]
   directory = "netlify/functions"
-
-[functions."syncReps"]
-  schedule = "@hourly"
+  node_bundler = "esbuild"
