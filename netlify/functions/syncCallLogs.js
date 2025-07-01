@@ -36,7 +36,7 @@ exports.handler = async () => {
             ]
           }
         ],
-        limit: 10,
+        limit: 30,
         properties: [
           'hs_timestamp',
           'direction',
