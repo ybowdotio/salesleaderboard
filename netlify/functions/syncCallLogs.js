@@ -32,11 +32,16 @@ exports.handler = async () => {
 
     for (const call of calls) {
       const props = call.properties || {};
-      const timestampRaw = props.hs_timestamp;
+      let timestampRaw = props.hs_timestamp;
 
       if (!timestampRaw || isNaN(Number(timestampRaw))) {
-        console.warn(`Skipping call with invalid timestamp. Call ID: ${call.id}`);
-        continue;
+        timestampRaw = call.createdAt;
+        if (!timestampRaw || isNaN(Number(timestampRaw))) {
+          console.warn(`Skipping call with invalid timestamp. Call ID: ${call.id}`);
+          continue;
+        } else {
+          console.debug(`Using fallback createdAt for call ID: ${call.id}`);
+        }
       }
 
       const timestamp = new Date(Number(timestampRaw));
