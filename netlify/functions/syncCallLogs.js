@@ -33,18 +33,24 @@ exports.handler = async () => {
     for (const call of calls) {
       const props = call.properties || {};
       let timestampRaw = props.hs_timestamp;
+      let timestamp = null;
 
-      if (!timestampRaw || isNaN(Number(timestampRaw))) {
-        timestampRaw = call.createdAt;
-        if (!timestampRaw || isNaN(Number(timestampRaw))) {
-          console.warn(`Skipping call with invalid timestamp. Call ID: ${call.id}`);
-          continue;
-        } else {
+      if (timestampRaw && !isNaN(Number(timestampRaw))) {
+        timestamp = new Date(Number(timestampRaw));
+      } else if (call.createdAt) {
+        try {
+          timestamp = new Date(call.createdAt);
+          if (isNaN(timestamp.getTime())) throw new Error();
           console.debug(`Using fallback createdAt for call ID: ${call.id}`);
+        } catch {
+          console.warn(`Skipping call with invalid fallback timestamp. Call ID: ${call.id}`);
+          continue;
         }
+      } else {
+        console.warn(`Skipping call with no usable timestamp. Call ID: ${call.id}`);
+        continue;
       }
 
-      const timestamp = new Date(Number(timestampRaw));
       const timestampISO = timestamp.toISOString();
       const timestampDate = timestampISO.split('T')[0];
       const timestampYear = timestamp.getFullYear();
