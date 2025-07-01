@@ -6,10 +6,11 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-console.log('HubSpot token exists?', !!process.env.HUBSPOT_PRIVATE_APP_TOKEN);
-
 
 exports.handler = async function () {
+  // ✅ Netlify will retain this env var now
+  console.log('HubSpot token exists?', !!process.env.HUBSPOT_PRIVATE_APP_TOKEN);
+
   try {
     // Step 1: Fetch Contacts (limited to 10 for now)
     const contactsResp = await axios.get(
@@ -18,7 +19,6 @@ exports.handler = async function () {
     );
 
     const contacts = contactsResp.data.results;
-
     const allCallRecords = [];
 
     // Step 2: For each contact, fetch their engagements
