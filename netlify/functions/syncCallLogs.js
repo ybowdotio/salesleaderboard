@@ -1,103 +1,93 @@
-// syncCallLogs.js (v3 API version)
+// syncCallLogs.js
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
+// Environment variables
 const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-exports.handler = async function () {
-  const headers = {
-    Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
-    'Content-Type': 'application/json'
-  };
-
-  const startOfMonth = new Date();
-  startOfMonth.setDate(1);
-  startOfMonth.setHours(0, 0, 0, 0);
-
-  let after = undefined;
-  let insertedCount = 0;
+exports.handler = async () => {
+  console.info('Starting sync...');
+  if (!HUBSPOT_PRIVATE_APP_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('Missing environment variables');
+    return { statusCode: 500, body: 'Missing environment variables' };
+  }
 
   try {
-    while (true) {
-      const params = {
-        limit: 100,
-        properties: [
-          'hs_call_title',
-          'hs_call_duration',
-          'hs_timestamp',
-          'hubspot_owner_id',
-          'hs_call_direction',
-          'hs_call_status'
-        ]
-      };
-      if (after) params.after = after;
+    // Fetch contacts
+    const contactsResponse = await axios.get('https://api.hubapi.com/crm/v3/objects/contacts?limit=10', {
+      headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
+    });
 
-      const { data } = await axios.get('https://api.hubapi.com/crm/v3/objects/calls', { headers, params });
+    const contacts = contactsResponse.data.results;
+    console.info(`Fetched ${contacts.length} contacts`);
 
-      for (const call of data.results) {
-        const callId = call.id;
-        const props = call.properties || {};
-        const timestamp = new Date(props.hs_timestamp);
+    let allCalls = [];
 
-        if (timestamp < startOfMonth) continue;
+    for (const contact of contacts) {
+      const contactId = contact.id;
+      const contactName = contact.properties.firstname + ' ' + contact.properties.lastname;
 
-        // Get associated contact
-        const assocRes = await axios.get(
-          `https://api.hubapi.com/crm/v3/objects/calls/${callId}/associations/contact`,
-          { headers }
-        );
+      const engagementsResponse = await axios.get(`https://api.hubapi.com/engagements/v1/engagements/associated/contact/${contactId}/paged?limit=100`, {
+        headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
+      });
 
-        const contactId = assocRes.data.results?.[0]?.id;
-        if (!contactId) continue;
+      const engagements = engagementsResponse.data.results;
+      const calls = engagements.filter(e => e.engagement.type === 'CALL');
 
-        const contactRes = await axios.get(
-          `https://api.hubapi.com/crm/v3/objects/contacts/${contactId}`,
-          { headers, params: { properties: ['firstname', 'lastname'] } }
-        );
-        const contact = contactRes.data.properties;
-        const contactName = `${contact.firstname || ''} ${contact.lastname || ''}`.trim();
+      for (const call of calls) {
+        const engagement = call.engagement;
+        const metadata = call.metadata || {};
 
-        // Get owner name
-        const ownerId = props.hubspot_owner_id;
-        let ownerName = null;
-        if (ownerId) {
-          const ownerRes = await axios.get(`https://api.hubapi.com/crm/v3/owners/${ownerId}`, { headers });
-          ownerName = ownerRes.data.fullName || null;
+        if (!engagement.contactId) {
+          console.warn(`Skipping call with missing contactId. Call ID: ${engagement.id}`);
+          continue;
         }
 
-        const callData = {
-          call_id: callId,
-          contact_id: contactId,
+        const timestampISO = metadata.timestamp
+          ? new Date(metadata.timestamp).toISOString()
+          : null;
+
+        if (!timestampISO) {
+          console.warn(`Skipping call with invalid timestamp. Call ID: ${engagement.id}`);
+          continue;
+        }
+
+        allCalls.push({
+          call_id: engagement.id,
+          contact_id: engagement.contactId,
+          owner_id: engagement.ownerId,
+          duration_seconds: metadata.durationMilliseconds ? Math.floor(metadata.durationMilliseconds / 1000) : null,
+          direction: metadata.fromNumber ? 'OUTBOUND' : 'INBOUND',
           contact_name: contactName,
-          owner_id: ownerId,
-          owner_name: ownerName,
-          direction: props.hs_call_direction || null,
-          duration_seconds: parseInt(props.hs_call_duration) || 0,
-          timestamp_iso: timestamp.toISOString(),
-          call_date: timestamp.toISOString().split('T')[0]
-        };
-
-        await supabase.from('calls').upsert(callData, { onConflict: ['call_id'] });
-        insertedCount++;
+          owner_name: engagement.ownerId, // Replace with actual lookup if needed
+          timestamp_iso: timestampISO,
+          timestamp_date: timestampISO.split('T')[0],
+          timestamp_year: new Date(timestampISO).getFullYear()
+        });
       }
-
-      if (!data.paging || !data.paging.next) break;
-      after = data.paging.next.after;
     }
 
-    return {
-      statusCode: 200,
-      body: `Successfully synced ${insertedCount} call logs for current month`
-    };
+    if (allCalls.length === 0) {
+      console.info('No call records to sync.');
+      return { statusCode: 200, body: 'No call records to sync.' };
+    }
+
+    console.info(`Upserting ${allCalls.length} call record(s) into Supabase...`);
+    const { error } = await supabase.from('calls').upsert(allCalls, { onConflict: ['call_id'] });
+
+    if (error) {
+      console.error('Upsert error:', error);
+      return { statusCode: 500, body: JSON.stringify(error) };
+    }
+
+    console.info('Sync complete.');
+    return { statusCode: 200, body: 'Sync complete.' };
   } catch (error) {
-    console.error('Error during sync:', error.message, error.response?.data || error);
-    return {
-      statusCode: 500,
-      body: `Error: ${error.message}`
-    };
+    console.error('Error during sync:', error);
+    return { statusCode: 500, body: error.toString() };
   }
 };
