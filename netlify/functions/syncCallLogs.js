@@ -92,7 +92,10 @@ exports.handler = async () => {
         const assocRes = await axios.get(
           `https://api.hubapi.com/crm/v4/objects/calls/${call.id}/associations/contacts`,
           {
-            headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
+            headers: {
+              Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
+              'Content-Type': 'application/json'
+            }
           }
         );
         contactId = assocRes.data?.results?.[0]?.toObjectId;
@@ -110,7 +113,10 @@ exports.handler = async () => {
         const contactRes = await axios.get(
           `https://api.hubapi.com/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname`,
           {
-            headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
+            headers: {
+              Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
+              'Content-Type': 'application/json'
+            }
           }
         );
         const cp = contactRes.data.properties;
@@ -125,7 +131,10 @@ exports.handler = async () => {
           const ownerRes = await axios.get(
             `https://api.hubapi.com/crm/v3/owners/${props.hubspot_owner_id}`,
             {
-              headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
+              headers: {
+                Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
+                'Content-Type': 'application/json'
+              }
             }
           );
           ownerName = ownerRes.data.fullName;
