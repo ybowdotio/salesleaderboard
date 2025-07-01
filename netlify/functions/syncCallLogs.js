@@ -1,7 +1,8 @@
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
-const HUBSPOT_API_KEY = process.env.HUBSPOT_API_KEY;
+const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+const HUBSPOT_API_KEY = HUBSPOT_PRIVATE_APP_TOKEN || process.env.HUBSPOT_API_KEY;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
