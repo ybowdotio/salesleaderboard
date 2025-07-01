@@ -56,52 +56,53 @@ exports.handler = async () => {
     const { data } = await hubspot.post('/crm/v3/objects/calls/search', requestBody);
     const calls = data.results;
 
-    const enrichedCalls = await Promise.all(
-      calls.map(async (call) => {
-        const props = call.properties;
-        const call_id = call.id;
+const enrichedCalls = (
+  await Promise.all(
+    calls.map(async (call) => {
+      const contactId = call.properties.hs_call_to_object_id;
+      const ownerId = call.properties.hubspot_owner_id;
+      const timestamp = parseInt(call.properties.hs_timestamp || "0", 10);
+      const direction = call.properties.hs_call_direction || null;
+      const duration = parseInt(call.properties.hs_call_duration || "0", 10);
+      const callId = call.id;
 
-        // Convert timestamp to date formats
-        const timestamp_ms = parseInt(props.hs_timestamp || '0');
-        const timestamp_iso = new Date(timestamp_ms).toISOString();
-        const call_date = timestamp_iso.slice(0, 10);
+      // Skip if no contactId
+      if (!contactId) return null;
 
-        // Get contact name (via association)
-        let contact_name = null;
-        try {
-          const associations = await hubspot.get(`/crm/v4/objects/calls/${call_id}/associations/contacts`);
-          const contactId = associations?.data?.results?.[0]?.id;
-          if (contactId) {
-            const contact = await hubspot.get(`/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname`);
-            const cp = contact.data.properties;
-            contact_name = [cp.firstname, cp.lastname].filter(Boolean).join(' ');
-          }
-        } catch (_) {}
+      // Get contact name
+      const contactRes = await axios.get(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname`, {
+        headers,
+      });
+      const cp = contactRes.data.properties;
+      const contact_name = [cp.firstname, cp.lastname].filter(Boolean).join(' ') || 'Unknown';
 
-        // Get owner name
-        let owner_name = null;
-        try {
-          const ownerId = props.hubspot_owner_id;
-          if (ownerId) {
-            const owner = await hubspot.get(`/crm/v3/owners/${ownerId}`);
-            owner_name = owner.data.firstName + ' ' + owner.data.lastName;
-          }
-        } catch (_) {}
+      // Get owner name
+      let owner_name = 'Unknown';
+      if (ownerId) {
+        const ownerRes = await axios.get(`https://api.hubapi.com/crm/v3/owners/${ownerId}`, {
+          headers,
+        });
+        owner_name = ownerRes.data.firstName + ' ' + ownerRes.data.lastName;
+      }
 
-        return {
-          call_id,
-          contact_id: contact_name ? null : null, // You can populate if needed
-          owner_id: props.hubspot_owner_id || null,
-          direction: props.hs_call_direction || null,
-          duration_seconds: parseInt(props.hs_call_duration || '0'),
-          timestamp: timestamp_ms,
-          timestamp_iso,
-          call_date,
-          contact_name,
-          owner_name,
-        };
-      })
-    );
+      const timestamp_iso = new Date(timestamp).toISOString();
+      const call_date = timestamp_iso.split('T')[0];
+
+      return {
+        call_id: callId,
+        contact_id: contactId,
+        owner_id: ownerId || null,
+        timestamp,
+        direction,
+        duration_seconds: duration,
+        contact_name,
+        owner_name,
+        timestamp_iso,
+        call_date,
+      };
+    })
+  )
+).filter(Boolean); // remove skipped nulls
 
     // Insert or update in Supabase
     const { data: upserted, error } = await supabase
