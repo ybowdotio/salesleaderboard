@@ -95,7 +95,7 @@ exports.handler = async () => {
             headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
           }
         );
-        contactId = assocRes.data?.results?.[0]?.id;
+        contactId = assocRes.data?.results?.[0]?.toObjectId;
       } catch (err) {
         console.warn(`Failed to fetch contact association for call ID: ${call.id}`);
       }
