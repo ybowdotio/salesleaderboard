@@ -91,18 +91,20 @@ exports.handler = async () => {
       // Fetch contact association
       const associations = call.associations || {};
       const contactId = associations.contacts?.results?.[0]?.id;
-      let contactName = null;
+      if (!contactId) {
+        console.warn(`Skipping call without contact ID. Call ID: ${call.id}`);
+        continue;
+      }
 
-      if (contactId) {
-        try {
-          const contactRes = await axios.get(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname`, {
-            headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
-          });
-          const cp = contactRes.data.properties;
-          contactName = `${cp.firstname || ''} ${cp.lastname || ''}`.trim();
-        } catch (err) {
-          console.warn(`Failed to fetch contact name for ID: ${contactId}`);
-        }
+      let contactName = null;
+      try {
+        const contactRes = await axios.get(`https://api.hubapi.com/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname`, {
+          headers: { Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}` }
+        });
+        const cp = contactRes.data.properties;
+        contactName = `${cp.firstname || ''} ${cp.lastname || ''}`.trim();
+      } catch (err) {
+        console.warn(`Failed to fetch contact name for ID: ${contactId}`);
       }
 
       // Fetch owner
@@ -120,7 +122,7 @@ exports.handler = async () => {
 
       allCalls.push({
         call_id: call.id,
-        contact_id: contactId || null,
+        contact_id: contactId,
         owner_id: props.hubspot_owner_id || null,
         duration_seconds: props.hs_call_duration ? parseInt(props.hs_call_duration) : null,
         direction: props.direction || null,
