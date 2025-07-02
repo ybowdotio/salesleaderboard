@@ -29,7 +29,7 @@ export const saveGoals = async (goalsData) => {
 
   const { error } = await supabase
     .from('daily_goals')
-    .upsert([payload]); // ✅ key fix: wrap in array
+    .upsert([payload]); // ✅ This must be an array
 
   if (error) {
     console.error("❌ Error saving goals:", error.message || error);
