@@ -25,7 +25,7 @@
     }
 
     .leaderboard {
-      max-width: 960px;
+      max-width: 1100px;
       margin: auto;
       background: #ffffff;
       border: 1px solid #dfe3e8;
@@ -53,7 +53,7 @@
 
     .metrics {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 1rem;
     }
 
@@ -66,27 +66,71 @@
     }
 
     .bar {
-      background: #ff7a59; /* HubSpot primary orange */
+      background: #ff7a59;
       height: 100%;
       width: 0;
+      max-width: 100%;
       position: absolute;
       top: 0;
       left: 0;
       transition: width 1.5s ease-in-out;
       border-radius: 6px;
+      z-index: 1;
+    }
+
+    .bar.over::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 8px;
+      height: 100%;
+      background: rgba(255, 122, 89, 0.9);
+      box-shadow: 0 0 10px rgba(255, 122, 89, 0.8);
+      animation: pulse-glow 1.5s infinite;
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% {
+        opacity: 0.6;
+        transform: scaleY(1);
+      }
+      50% {
+        opacity: 1;
+        transform: scaleY(1.1);
+      }
     }
 
     .runner {
       position: absolute;
       bottom: 100%;
-      transform: translate(-50%, -4px);
+      transform: translate(-50%, 6px);
       width: 28px;
       height: 28px;
+      z-index: 2;
     }
 
     .runner img {
       width: 100%;
       height: auto;
+    }
+
+    .badge-icon {
+      position: absolute;
+      top: -8px;
+      left: -8px;
+      width: 20px;
+      height: 20px;
+      background-color: #2ecc71;
+      border-radius: 50%;
+      font-size: 0.7rem;
+      color: #fff;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 3;
+      box-shadow: 0 0 5px rgba(46, 204, 113, 0.6);
     }
 
     .label {
@@ -97,16 +141,40 @@
       font-size: 0.85rem;
       font-weight: 500;
       color: #33475b;
+      z-index: 1;
+    }
+
+    .goal-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #fff;
+      border-radius: 6px;
+    }
+
+    .goal-complete {
+      background-color: #2ecc71;
+    }
+
+    .goal-partial {
+      background-color: #f39c12;
+    }
+
+    .goal-none {
+      background-color: #e74c3c;
     }
 
     .header-row {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       font-size: 0.9rem;
       font-weight: 600;
       color: #7c98b6;
       padding: 1rem 1.25rem 0.5rem;
-      max-width: 960px;
+      max-width: 1100px;
       margin: auto;
     }
 
@@ -125,6 +193,7 @@
     <div>Avg Call Time</div>
     <div>Total Call Time</div>
     <div>Total Sales</div>
+    <div>Daily Goal</div>
   </div>
   <div class="leaderboard" id="leaderboard"></div>
 
@@ -132,11 +201,12 @@
     const reps = [
       {
         name: 'Alex Johnson',
-        calls: 80,
+        calls: 140,
         avgTime: '2:34',
-        totalTime: '3:45:10',
+        totalTime: '3:20:00',
         sales: '$14,300',
-        percent: { calls: 80, avgTime: 65, totalTime: 90, sales: 70 }
+        percent: { calls: 116, avgTime: 65, totalTime: 111, sales: 70 },
+        goals: { badge: '✓', type: 'Calls' }
       },
       {
         name: 'Taylor Smith',
@@ -144,7 +214,8 @@
         avgTime: '3:01',
         totalTime: '2:50:22',
         sales: '$11,200',
-        percent: { calls: 65, avgTime: 70, totalTime: 75, sales: 60 }
+        percent: { calls: 65, avgTime: 70, totalTime: 75, sales: 60 },
+        goals: { badge: '⚠', type: 'None' }
       },
       {
         name: 'Morgan Lee',
@@ -152,7 +223,8 @@
         avgTime: '2:15',
         totalTime: '4:12:50',
         sales: '$17,850',
-        percent: { calls: 92, avgTime: 55, totalTime: 95, sales: 85 }
+        percent: { calls: 92, avgTime: 55, totalTime: 95, sales: 85 },
+        goals: { badge: '🏆', type: 'All 3' }
       }
     ];
 
@@ -162,37 +234,28 @@
       const repRow = document.createElement('div');
       repRow.className = 'rep-row';
 
+      const over = value => value > 100 ? ' over' : '';
+      const goalClass = rep.goals.type === 'All 3' ? 'goal-complete' : rep.goals.type === 'None' ? 'goal-none' : 'goal-partial';
+
       repRow.innerHTML = `
         <div class="rep-name">${rep.name}</div>
         <div class="metrics">
-          <div class="metric" data-metric="calls">
-            <div class="bar" style="width: ${rep.percent.calls}%"></div>
-            <div class="runner" style="left: ${rep.percent.calls}%">
-              <img src="/obstacles.gif" alt="Runner animation">
-            </div>
-            <div class="label">${rep.calls}</div>
-          </div>
-          <div class="metric" data-metric="avg-time">
-            <div class="bar" style="width: ${rep.percent.avgTime}%"></div>
-            <div class="runner" style="left: ${rep.percent.avgTime}%">
-              <img src="/obstacles.gif" alt="Runner animation">
-            </div>
-            <div class="label">${rep.avgTime}</div>
-          </div>
-          <div class="metric" data-metric="total-time">
-            <div class="bar" style="width: ${rep.percent.totalTime}%"></div>
-            <div class="runner" style="left: ${rep.percent.totalTime}%">
-              <img src="/obstacles.gif" alt="Runner animation">
-            </div>
-            <div class="label">${rep.totalTime}</div>
-          </div>
-          <div class="metric" data-metric="sales">
-            <div class="bar" style="width: ${rep.percent.sales}%"></div>
-            <div class="runner" style="left: ${rep.percent.sales}%">
-              <img src="/obstacles.gif" alt="Runner animation">
-            </div>
-            <div class="label">${rep.sales}</div>
-          </div>
+          ${['calls', 'avgTime', 'totalTime', 'sales'].map(key => {
+            const value = rep.percent[key];
+            const label = key === 'calls' ? rep.calls : key === 'avgTime' ? rep.avgTime : key === 'totalTime' ? rep.totalTime : rep.sales;
+            const showBadge = rep.goals.type === 'All 3' || rep.goals.type.toLowerCase().includes(key.replace(/Time/, 'time'));
+            return `
+              <div class="metric">
+                <div class="bar${over(value)}" style="width: 100%"></div>
+                <div class="runner" style="left: ${Math.min(value, 100)}%">
+                  <img src="obstacles.gif" alt="Runner">
+                  ${showBadge ? '<div class="badge-icon">✓</div>' : ''}
+                </div>
+                <div class="label">${label}</div>
+              </div>
+            `;
+          }).join('')}
+          <div class="goal-badge ${goalClass}">${rep.goals.badge}</div>
         </div>
       `;
 
