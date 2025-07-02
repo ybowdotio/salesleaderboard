@@ -152,6 +152,41 @@
       localStorage.removeItem("dailyGoals");
       location.reload();
     });
+    <script type="module">
+  import { loadGoals, saveGoals, resetGoals } from './js/goals.js';
+
+  const userId = 'rep_123'; // Replace with real user ID logic
+  const form = document.getElementById("goalsForm");
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    const goals = await loadGoals(userId);
+    if (goals) {
+      form.targetCalls.value = goals.target_calls;
+      form.targetAvgCallTime.value = goals.avg_call_time;
+      form.targetTotalCallTime.value = goals.total_call_time;
+      form.targetSales.value = goals.sales_target;
+      document.getElementById("requireSaleToday").checked = goals.require_sale_today;
+    }
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const goalsData = {
+      target_calls: parseInt(form.targetCalls.value),
+      avg_call_time: parseInt(form.targetAvgCallTime.value),
+      total_call_time: parseInt(form.targetTotalCallTime.value),
+      sales_target: parseInt(form.targetSales.value),
+      require_sale_today: document.getElementById("requireSaleToday").checked
+    };
+    await saveGoals(userId, goalsData);
+    alert("Goals saved!");
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", async () => {
+    await resetGoals(userId);
+    location.reload();
+  });
+</script>
   </script>
 </body>
 </html>
