@@ -30,9 +30,11 @@ export const saveGoals = async (goalsData) => {
 
   const { error } = await supabase
     .from('daily_goals')
-    .upsert(payload);
+    .upsert(payload); // ✅ no array brackets
 
-  if (error) console.error('Error saving goals:', error);
+  if (error) {
+    console.error('Error saving goals:', error);
+  }
 };
 
 export const resetGoals = async () => {
@@ -41,5 +43,7 @@ export const resetGoals = async () => {
     .delete()
     .eq('id', GLOBAL_GOAL_ID);
 
-  if (error) console.error('Error resetting goals:', error);
+  if (error) {
+    console.error('Error resetting goals:', error);
+  }
 };
