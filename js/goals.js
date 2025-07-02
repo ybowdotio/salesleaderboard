@@ -25,11 +25,11 @@ export const saveGoals = async (goalsData) => {
     updated_at: new Date().toISOString()
   };
 
-  console.log("🧾 Final payload being sent to Supabase:", payload);
+  console.log("✅ Final payload being sent to Supabase:", JSON.stringify(payload, null, 2));
 
   const { error } = await supabase
     .from('daily_goals')
-    .upsert(payload); // Make 100% sure this is not wrapped in []
+    .upsert(payload); // DO NOT wrap in []
 
   if (error) {
     console.error("❌ Error saving goals:", error);
@@ -42,5 +42,7 @@ export const resetGoals = async () => {
     .delete()
     .eq('id', GLOBAL_GOAL_ID);
 
-  if (error) console.error('Error resetting goals:', error);
+  if (error) {
+    console.error('❌ Error resetting goals:', error);
+  }
 };
