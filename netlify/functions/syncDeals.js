@@ -1,26 +1,28 @@
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
-// ✅ Initialize Supabase client
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// ✅ Log sync results into sync_logs table
 async function logSync({ type, status, message }) {
-  await supabase.from('sync_logs').insert([
-    { type, status, message }
-  ]);
+  try {
+    await supabase.from('sync_logs').insert([{ type, status, message }]);
+  } catch (err) {
+    console.error('❌ Failed to log to sync_logs:', err.message);
+  }
 }
 
 exports.handler = async () => {
   try {
-    // 🗓️ Start of month filter
+    console.log('🧪 syncDeals started');
+
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
     const isoStart = startOfMonth.toISOString();
+    const now = new Date().toISOString();
 
     const HUBSPOT_API = 'https://api.hubapi.com';
     const HUBSPOT_HEADERS = {
@@ -31,9 +33,9 @@ exports.handler = async () => {
     let after = undefined;
     let hasMore = true;
     let upserted = 0;
-    const now = new Date().toISOString();
 
     while (hasMore) {
+      console.log('📡 Fetching deals from HubSpot...');
       const response = await axios.post(
         `${HUBSPOT_API}/crm/v3/objects/deals/search`,
         {
@@ -60,28 +62,34 @@ exports.handler = async () => {
       after = response.data.paging?.next?.after;
       hasMore = !!after;
 
+      console.log(`📥 Retrieved ${deals.length} deals from HubSpot`);
+
       for (const deal of deals) {
-        const { id, properties } = deal;
+        try {
+          const { id, properties } = deal;
 
-        const dealRecord = {
-          hubspot_id: id,
-          dealname: properties.dealname || '',
-          amount: parseFloat(properties.amount || 0),
-          pipeline: properties.pipeline || '',
-          dealstage: properties.dealstage || '',
-          closedate: properties.closedate ? new Date(properties.closedate) : null,
-          synced_to_hubspot: false,
-          last_synced_at: now
-        };
+          const dealRecord = {
+            hubspot_id: id,
+            dealname: properties.dealname || '',
+            amount: parseFloat(properties.amount || 0),
+            pipeline: properties.pipeline || '',
+            dealstage: properties.dealstage || '',
+            closedate: properties.closedate ? new Date(properties.closedate) : null,
+            synced_to_hubspot: false,
+            last_synced_at: now
+          };
 
-        const { error } = await supabase
-          .from('deals')
-          .upsert(dealRecord, { onConflict: ['hubspot_id'] });
+          const { error } = await supabase
+            .from('deals')
+            .upsert(dealRecord, { onConflict: ['hubspot_id'] });
 
-        if (error) {
-          console.error(`❌ Failed to upsert deal ${id}:`, error.message);
-        } else {
-          upserted++;
+          if (error) {
+            console.error(`❌ Upsert error on deal ${id}:`, error.message);
+          } else {
+            upserted++;
+          }
+        } catch (innerErr) {
+          console.error('❌ Error processing individual deal:', innerErr.message);
         }
       }
     }
@@ -92,12 +100,13 @@ exports.handler = async () => {
       message: `Synced ${upserted} deals`
     });
 
+    console.log(`✅ Sync complete. Upserted ${upserted} deals.`);
     return {
       statusCode: 200,
       body: JSON.stringify({ message: `✅ Synced ${upserted} deals.`, timestamp: now })
     };
   } catch (err) {
-    console.error('❌ syncDeals failed:', err.message);
+    console.error('❌ syncDeals failed (outer catch):', err.message);
 
     await logSync({
       type: 'pull',
