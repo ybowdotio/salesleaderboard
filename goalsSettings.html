@@ -112,6 +112,7 @@
     <a href="/leaderboard" class="back-link">← Back to Leaderboard</a>
   </div>
 
+  <!-- Optional fallback local logic -->
   <script>
     const defaultGoals = {
       targetCalls: 120,
@@ -123,7 +124,6 @@
 
     const form = document.getElementById("goalsForm");
 
-    // Load stored goals on page load
     window.addEventListener("DOMContentLoaded", () => {
       const savedGoals = JSON.parse(localStorage.getItem("dailyGoals")) || defaultGoals;
       form.targetCalls.value = savedGoals.targetCalls;
@@ -133,75 +133,48 @@
       document.getElementById("requireSaleToday").checked = savedGoals.requireSaleToday;
     });
 
-    // Save goals
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const goals = {
-        targetCalls: parseInt(form.targetCalls.value),
-        targetAvgCallTime: parseInt(form.targetAvgCallTime.value),
-        targetTotalCallTime: parseInt(form.targetTotalCallTime.value),
-        targetSales: parseInt(form.targetSales.value),
-        requireSaleToday: document.getElementById("requireSaleToday").checked
-      };
-      localStorage.setItem("dailyGoals", JSON.stringify(goals));
-      alert("Goals saved successfully!");
-    });
-
-    // Reset goals
     document.getElementById("resetBtn").addEventListener("click", () => {
       localStorage.removeItem("dailyGoals");
       location.reload();
     });
-    <script type="module">
-  import { loadGoals, saveGoals, resetGoals } from './js/goals.js';
+  </script>
 
-  const userId = 'rep_123'; // Replace with real user ID logic
-  const form = document.getElementById("goalsForm");
+  <!-- Supabase logic -->
+  <script type="module">
+    import { loadGoals, saveGoals, resetGoals } from './js/goals.js';
 
-  document.addEventListener("DOMContentLoaded", async () => {
-    const goals = await loadGoals(userId);
-    if (goals) {
-      form.targetCalls.value = goals.target_calls;
-      form.targetAvgCallTime.value = goals.avg_call_time;
-      form.targetTotalCallTime.value = goals.total_call_time;
-      form.targetSales.value = goals.sales_target;
-      document.getElementById("requireSaleToday").checked = goals.require_sale_today;
-    }
-  });
-//Debug Save
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const goalsData = {
-      target_calls: parseInt(form.targetCalls.value),
-      avg_call_time: parseInt(form.targetAvgCallTime.value),
-      total_call_time: parseInt(form.targetTotalCallTime.value),
-      sales_target: parseInt(form.targetSales.value),
-      require_sale_today: document.getElementById("requireSaleToday").checked
-    };
-    await saveGoals(userId, goalsData);
-    alert("Goals saved!");
-  });
+    const userId = 'rep_123';
+    const form = document.getElementById("goalsForm");
 
-  document.getElementById("resetBtn").addEventListener("click", async () => {
-    await resetGoals(userId);
-    location.reload();
-  });
+    document.addEventListener("DOMContentLoaded", async () => {
+      const goals = await loadGoals(userId);
+      if (goals) {
+        form.targetCalls.value = goals.target_calls;
+        form.targetAvgCallTime.value = goals.avg_call_time;
+        form.targetTotalCallTime.value = goals.total_call_time;
+        form.targetSales.value = goals.sales_target;
+        document.getElementById("requireSaleToday").checked = goals.require_sale_today;
+      }
+    });
 
     form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const goalsData = {
-    target_calls: parseInt(form.targetCalls.value),
-    avg_call_time: parseInt(form.targetAvgCallTime.value),
-    total_call_time: parseInt(form.targetTotalCallTime.value),
-    sales_target: parseInt(form.targetSales.value),
-    require_sale_today: document.getElementById("requireSaleToday").checked
-  };
-  console.log("Saving goals:", goalsData); // ✅ add this
-  await saveGoals(userId, goalsData);
-  alert("Goals saved!");
-});
+      e.preventDefault();
+      const goalsData = {
+        target_calls: parseInt(form.targetCalls.value),
+        avg_call_time: parseInt(form.targetAvgCallTime.value),
+        total_call_time: parseInt(form.targetTotalCallTime.value),
+        sales_target: parseInt(form.targetSales.value),
+        require_sale_today: document.getElementById("requireSaleToday").checked
+      };
+      console.log("Saving goals:", goalsData);
+      await saveGoals(userId, goalsData);
+      alert("Goals saved!");
+    });
 
-</script>
+    document.getElementById("resetBtn").addEventListener("click", async () => {
+      await resetGoals(userId);
+      location.reload();
+    });
   </script>
 </body>
 </html>
