@@ -14,7 +14,10 @@ export const loadGoals = async () => {
     .eq('id', GLOBAL_GOAL_ID)
     .maybeSingle();
 
-  if (error) console.error('Error loading goals:', error);
+  if (error) {
+    console.error('❌ Error loading goals:', error);
+  }
+
   return data;
 };
 
@@ -29,11 +32,14 @@ export const saveGoals = async (goalsData) => {
 
   const { error } = await supabase
     .from('daily_goals')
-    .upsert(payload, { onConflict: ['id'] }); // ✅ key fix
+    .upsert(payload, { onConflict: ['id'] }); // Make sure 'id' is your PRIMARY KEY
 
   if (error) {
     console.error("❌ Error saving goals:", error);
-    export const resetGoals = async () => {
+  }
+};
+
+export const resetGoals = async () => {
   const { error } = await supabase
     .from('daily_goals')
     .delete()
