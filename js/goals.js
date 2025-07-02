@@ -32,7 +32,7 @@ export const saveGoals = async (goalsData) => {
 
   const { error } = await supabase
     .from('daily_goals')
-    .upsert(payload, { onConflict: ['id'] }); // Make sure 'id' is your PRIMARY KEY
+    .upsert([payload], { onConflict: ['id'] }); // ✅ wrap in array!
 
   if (error) {
     console.error("❌ Error saving goals:", error);
