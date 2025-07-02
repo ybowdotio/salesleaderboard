@@ -4,8 +4,8 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 
 // ✅ Replace with your actual project credentials
 const supabase = createClient(
-  'https://wmifmsynoxlecfpidtdtr.supabase.co',
-  'your-actual-anon-key-here'
+  'https://vmifmysnxolecfpidttr.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtaWZteXNueG9sZWNmcGlkdHRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEzODQ4NzksImV4cCI6MjA2Njk2MDg3OX0.3h-lHze2gA0y2Y3CCjPmAzyzI7Fe_FL3HCP0Tr4uMrU'
 );
 
 const GLOBAL_GOAL_ID = 'global-goals';
