@@ -104,7 +104,7 @@
     .runner {
       position: absolute;
       bottom: 100%;
-      transform: translate(-50%, 6px);
+      transform: translate(-50%, -12px);
       width: 28px;
       height: 28px;
       z-index: 2;
@@ -131,6 +131,15 @@
       justify-content: center;
       z-index: 3;
       box-shadow: 0 0 5px rgba(46, 204, 113, 0.6);
+    }
+
+    .sale-star {
+      position: absolute;
+      top: -12px;
+      right: -10px;
+      font-size: 16px;
+      color: gold;
+      z-index: 4;
     }
 
     .label {
@@ -192,7 +201,7 @@
     <div>Total Calls</div>
     <div>Avg Call Time</div>
     <div>Total Call Time</div>
-    <div>Total Sales</div>
+    <div>Month To Date Sales</div>
     <div>Daily Goal</div>
   </div>
   <div class="leaderboard" id="leaderboard"></div>
@@ -206,7 +215,7 @@
         totalTime: '3:20:00',
         sales: '$14,300',
         percent: { calls: 116, avgTime: 65, totalTime: 111, sales: 70 },
-        goals: { badge: '✓', type: 'Calls' }
+        goals: { badge: '✓', type: 'Calls', todaySale: true }
       },
       {
         name: 'Taylor Smith',
@@ -215,7 +224,7 @@
         totalTime: '2:50:22',
         sales: '$11,200',
         percent: { calls: 65, avgTime: 70, totalTime: 75, sales: 60 },
-        goals: { badge: '⚠', type: 'None' }
+        goals: { badge: '⚠', type: 'None', todaySale: false }
       },
       {
         name: 'Morgan Lee',
@@ -224,7 +233,7 @@
         totalTime: '4:12:50',
         sales: '$17,850',
         percent: { calls: 92, avgTime: 55, totalTime: 95, sales: 85 },
-        goals: { badge: '🏆', type: 'All 3' }
+        goals: { badge: '🏆', type: 'All 3', todaySale: true }
       }
     ];
 
@@ -244,12 +253,15 @@
             const value = rep.percent[key];
             const label = key === 'calls' ? rep.calls : key === 'avgTime' ? rep.avgTime : key === 'totalTime' ? rep.totalTime : rep.sales;
             const showBadge = rep.goals.type === 'All 3' || rep.goals.type.toLowerCase().includes(key.replace(/Time/, 'time'));
+            const isSales = key === 'sales';
+            const saleStar = isSales && rep.goals.todaySale ? '<div class="sale-star" title="Sale made today!">✨</div>' : '';
             return `
               <div class="metric">
-                <div class="bar${over(value)}" style="width: 100%"></div>
+                <div class="bar${over(value)}" style="width: ${Math.min(value, 100)}%"></div>
                 <div class="runner" style="left: ${Math.min(value, 100)}%">
                   <img src="obstacles.gif" alt="Runner">
                   ${showBadge ? '<div class="badge-icon">✓</div>' : ''}
+                  ${saleStar}
                 </div>
                 <div class="label">${label}</div>
               </div>
