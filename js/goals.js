@@ -33,5 +33,13 @@ export const saveGoals = async (goalsData) => {
 
   if (error) {
     console.error("❌ Error saving goals:", error);
+    export const resetGoals = async () => {
+  const { error } = await supabase
+    .from('daily_goals')
+    .delete()
+    .eq('id', GLOBAL_GOAL_ID);
+
+  if (error) {
+    console.error('❌ Error resetting goals:', error);
   }
 };
