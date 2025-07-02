@@ -14,20 +14,39 @@ const HUBSPOT_HEADERS = {
 
 exports.handler = async () => {
   try {
+    // Calculate start of current month
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    const isoStart = startOfMonth.toISOString();
+
     let after = undefined;
     let hasMore = true;
     let upserted = 0;
     const now = new Date().toISOString();
 
     while (hasMore) {
-      const response = await axios.get(`${HUBSPOT_API}/crm/v3/objects/deals`, {
-        headers: HUBSPOT_HEADERS,
-        params: {
-          limit: 100,
+      const response = await axios.post(
+        `${HUBSPOT_API}/crm/v3/objects/deals/search`,
+        {
+          filterGroups: [
+            {
+              filters: [
+                {
+                  propertyName: 'createdate',
+                  operator: 'GTE',
+                  value: isoStart
+                }
+              ]
+            }
+          ],
           properties: ['dealname', 'amount', 'pipeline', 'dealstage', 'closedate'],
+          sorts: [{ propertyName: 'createdate', direction: 'DESCENDING' }],
+          limit: 100,
           after
-        }
-      });
+        },
+        { headers: HUBSPOT_HEADERS }
+      );
 
       const deals = response.data.results;
       after = response.data.paging?.next?.after;
@@ -35,7 +54,6 @@ exports.handler = async () => {
 
       for (const deal of deals) {
         const { id, properties } = deal;
-        const closedate = properties.closedate ? new Date(properties.closedate) : null;
 
         const dealRecord = {
           hubspot_id: id,
@@ -43,8 +61,8 @@ exports.handler = async () => {
           amount: parseFloat(properties.amount || 0),
           pipeline: properties.pipeline || '',
           dealstage: properties.dealstage || '',
-          closedate,
-          synced_to_hubspot: false, // <-- bidirectional flag
+          closedate: properties.closedate ? new Date(properties.closedate) : null,
+          synced_to_hubspot: false,
           last_synced_at: now
         };
 
@@ -53,7 +71,7 @@ exports.handler = async () => {
           .upsert(dealRecord, { onConflict: ['hubspot_id'] });
 
         if (error) {
-          console.error(`❌ Error upserting deal ${id}:`, error.message);
+          console.error(`❌ Failed to upsert deal ${id}:`, error.message);
         } else {
           upserted++;
         }
@@ -65,7 +83,7 @@ exports.handler = async () => {
       body: JSON.stringify({ message: `✅ Synced ${upserted} deals.`, timestamp: now })
     };
   } catch (err) {
-    console.error('❌ Deal sync failed:', err.message);
+    console.error('❌ Deal sync error:', err.message);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: err.message })
