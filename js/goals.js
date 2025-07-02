@@ -13,7 +13,7 @@ export const loadGoals = async (userId) => {
     .from('daily_goals')
     .select('*')
     .eq('user_id', userId)
-    .single();
+    .maybeSingle();
 
   if (error) console.error('Error loading goals:', error);
   return data;
