@@ -252,16 +252,16 @@
           ${['calls', 'avgTime', 'totalTime', 'sales'].map(key => {
             const value = rep.percent[key];
             const label = key === 'calls' ? rep.calls : key === 'avgTime' ? rep.avgTime : key === 'totalTime' ? rep.totalTime : rep.sales;
-            const showBadge = rep.goals.type === 'All 3' || rep.goals.type.toLowerCase().includes(key.replace(/Time/, 'time'));
+            const showGreenCheck = key !== 'sales' && value >= 100;
             const isSales = key === 'sales';
-            const saleStar = isSales && rep.goals.todaySale ? '<div class="sale-star" title="Sale made today!">✨</div>' : '';
+            const showStar = isSales && rep.goals.todaySale;
             return `
               <div class="metric">
                 <div class="bar${over(value)}" style="width: ${Math.min(value, 100)}%"></div>
                 <div class="runner" style="left: ${Math.min(value, 100)}%">
                   <img src="obstacles.gif" alt="Runner">
-                  ${showBadge ? '<div class="badge-icon">✓</div>' : ''}
-                  ${saleStar}
+                  ${showGreenCheck ? '<div class="badge-icon">✓</div>' : ''}
+                  ${showStar ? '<div class="sale-star" title="Sale made today!">✨</div>' : ''}
                 </div>
                 <div class="label">${label}</div>
               </div>
