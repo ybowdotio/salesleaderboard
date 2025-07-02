@@ -12,9 +12,19 @@ const HUBSPOT_HEADERS = {
   'Content-Type': 'application/json'
 };
 
+// ⏺ Log each sync attempt to Supabase
+async function logSync({ type, status, message }) {
+  await supabase.from('sync_logs').insert([
+    {
+      type,
+      status,
+      message
+    }
+  ]);
+}
+
 exports.handler = async () => {
   try {
-    // Calculate start of current month
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
@@ -78,11 +88,23 @@ exports.handler = async () => {
       }
     }
 
+    await logSync({
+      type: 'pull',
+      status: 'success',
+      message: `Synced ${upserted} deals`
+    });
+
     return {
       statusCode: 200,
       body: JSON.stringify({ message: `✅ Synced ${upserted} deals.`, timestamp: now })
     };
   } catch (err) {
+    await logSync({
+      type: 'pull',
+      status: 'error',
+      message: err.message
+    });
+
     console.error('❌ Deal sync error:', err.message);
     return {
       statusCode: 500,
