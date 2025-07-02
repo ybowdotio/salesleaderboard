@@ -25,11 +25,15 @@ export const saveGoals = async (goalsData) => {
     updated_at: new Date().toISOString()
   };
 
+  console.log("🧾 Final payload being sent to Supabase:", payload);
+
   const { error } = await supabase
     .from('daily_goals')
-    .upsert(payload, { onConflict: 'id' }); // ✅ Fix: explicitly declare conflict column
+    .upsert(payload); // Make 100% sure this is not wrapped in []
 
-  if (error) console.error('Error saving goals:', error);
+  if (error) {
+    console.error("❌ Error saving goals:", error);
+  }
 };
 
 export const resetGoals = async () => {
