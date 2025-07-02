@@ -27,7 +27,7 @@ export const saveGoals = async (goalsData) => {
 
   const { error } = await supabase
     .from('daily_goals')
-    .upsert(payload); // ✅ DO NOT WRAP IN []
+    .upsert(payload, { onConflict: ['id'] }); // 👈 explicitly set conflict target
 
   if (error) console.error('Error saving goals:', error);
 };
