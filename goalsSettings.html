@@ -3,155 +3,155 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Adjust Daily Sales Goals</title>
+  <title>Goal Settings</title>
   <style>
     body {
-      font-family: "Helvetica Neue", sans-serif;
-      background-color: #f5f8fa;
-      color: #213343;
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background: #f5f8fa;
       margin: 0;
       padding: 2rem;
-    }
-
-    .container {
-      max-width: 600px;
-      margin: auto;
-      background: #ffffff;
-      padding: 2rem;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+      color: #33475b;
     }
 
     h1 {
       text-align: center;
-      font-size: 1.5rem;
-      margin-bottom: 1.5rem;
     }
 
-    .form-group {
-      margin-bottom: 1.25rem;
+    .container {
+      max-width: 600px;
+      margin: 2rem auto;
+      background: white;
+      border-radius: 8px;
+      padding: 2rem;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
     }
 
     label {
       display: block;
-      margin-bottom: 0.5rem;
+      margin-top: 1rem;
       font-weight: 600;
     }
 
-    input[type="number"], input[type="checkbox"] {
+    input[type="number"] {
+      width: 100%;
       padding: 0.5rem;
       font-size: 1rem;
-      width: 100%;
-      max-width: 100%;
-      border: 1px solid #d0d5dd;
+      margin-top: 0.5rem;
+      border: 1px solid #ccc;
       border-radius: 4px;
     }
 
-    input[type="checkbox"] {
-      width: auto;
-    }
-
-    .form-actions {
+    .buttons {
       display: flex;
       justify-content: space-between;
-      gap: 1rem;
+      margin-top: 2rem;
     }
 
-    button {
-      padding: 0.75rem 1.5rem;
+    .buttons button {
+      padding: 0.5rem 1.5rem;
       font-size: 1rem;
       border: none;
       border-radius: 4px;
       cursor: pointer;
     }
 
-    .save {
+    .save-btn {
       background-color: #ff7a59;
       color: white;
     }
 
-    .reset {
-      background-color: #e0e6ed;
-      color: #213343;
+    .reset-btn {
+      background-color: #e0e0e0;
     }
 
-    .note {
+    .back-link {
+      display: block;
       text-align: center;
-      font-size: 0.875rem;
-      margin-top: 1.5rem;
-      color: #66788a;
+      margin-top: 2rem;
+      color: #0073aa;
+      text-decoration: none;
+    }
+
+    .checkbox-container {
+      margin-top: 1rem;
+    }
+
+    .checkbox-container input[type="checkbox"] {
+      margin-right: 0.5rem;
     }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Adjust Daily Sales Goals</h1>
-    <div class="form-group">
+    <form id="goalsForm">
       <label for="targetCalls">Target Total Calls</label>
-      <input type="number" id="targetCalls" />
-    </div>
-    <div class="form-group">
+      <input type="number" id="targetCalls" name="targetCalls" value="120" />
+
       <label for="targetAvgCallTime">Target Average Call Time (seconds)</label>
-      <input type="number" id="targetAvgCallTime" />
-    </div>
-    <div class="form-group">
-      <label for="targetMinutes">Target Total Call Time (minutes)</label>
-      <input type="number" id="targetMinutes" />
-    </div>
-    <div class="form-group">
-      <label for="targetSalesMTD">Target Month-To-Date Sales ($)</label>
-      <input type="number" id="targetSalesMTD" />
-    </div>
-    <div class="form-group">
-      <label>
-        <input type="checkbox" id="requireSaleToday" />
-        Require a Sale Today to Earn Sales Badge
-      </label>
-    </div>
-    <div class="form-actions">
-      <button class="save" onclick="saveGoals()">Save</button>
-      <button class="reset" onclick="resetGoals()">Reset to Default</button>
-    </div>
-    <div class="note" id="statusMessage"></div>
+      <input type="number" id="targetAvgCallTime" name="targetAvgCallTime" value="150" />
+
+      <label for="targetTotalCallTime">Target Total Call Time (minutes)</label>
+      <input type="number" id="targetTotalCallTime" name="targetTotalCallTime" value="180" />
+
+      <label for="targetSales">Target Month-To-Date Sales ($)</label>
+      <input type="number" id="targetSales" name="targetSales" value="0" />
+
+      <div class="checkbox-container">
+        <label>
+          <input type="checkbox" id="requireSaleToday" checked />
+          Require a Sale Today to Earn Sales Badge
+        </label>
+      </div>
+
+      <div class="buttons">
+        <button type="submit" class="save-btn">Save</button>
+        <button type="button" class="reset-btn" id="resetBtn">Reset to Default</button>
+      </div>
+    </form>
+    <a href="/" class="back-link">← Back to Leaderboard</a>
   </div>
 
   <script>
     const defaultGoals = {
       targetCalls: 120,
       targetAvgCallTime: 150,
-      targetMinutes: 180,
-      targetSalesMTD: 0,
-      requireSaleToday: true,
+      targetTotalCallTime: 180,
+      targetSales: 0,
+      requireSaleToday: true
     };
 
-    function loadGoals() {
-      const saved = JSON.parse(localStorage.getItem("dailyGoals")) || defaultGoals;
-      document.getElementById("targetCalls").value = saved.targetCalls;
-      document.getElementById("targetAvgCallTime").value = saved.targetAvgCallTime;
-      document.getElementById("targetMinutes").value = saved.targetMinutes;
-      document.getElementById("targetSalesMTD").value = saved.targetSalesMTD;
-      document.getElementById("requireSaleToday").checked = saved.requireSaleToday;
-    }
+    const form = document.getElementById("goalsForm");
 
-    function saveGoals() {
+    // Load stored goals on page load
+    window.addEventListener("DOMContentLoaded", () => {
+      const savedGoals = JSON.parse(localStorage.getItem("dailyGoals")) || defaultGoals;
+      form.targetCalls.value = savedGoals.targetCalls;
+      form.targetAvgCallTime.value = savedGoals.targetAvgCallTime;
+      form.targetTotalCallTime.value = savedGoals.targetTotalCallTime;
+      form.targetSales.value = savedGoals.targetSales;
+      document.getElementById("requireSaleToday").checked = savedGoals.requireSaleToday;
+    });
+
+    // Save goals
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
       const goals = {
-        targetCalls: parseInt(document.getElementById("targetCalls").value, 10),
-        targetAvgCallTime: parseInt(document.getElementById("targetAvgCallTime").value, 10),
-        targetMinutes: parseInt(document.getElementById("targetMinutes").value, 10),
-        targetSalesMTD: parseInt(document.getElementById("targetSalesMTD").value, 10),
+        targetCalls: parseInt(form.targetCalls.value),
+        targetAvgCallTime: parseInt(form.targetAvgCallTime.value),
+        targetTotalCallTime: parseInt(form.targetTotalCallTime.value),
+        targetSales: parseInt(form.targetSales.value),
         requireSaleToday: document.getElementById("requireSaleToday").checked
       };
       localStorage.setItem("dailyGoals", JSON.stringify(goals));
-      document.getElementById("statusMessage").textContent = "Goals saved!";
-    }
+      alert("Goals saved successfully!");
+    });
 
-    function resetGoals() {
+    // Reset goals
+    document.getElementById("resetBtn").addEventListener("click", () => {
       localStorage.removeItem("dailyGoals");
-      loadGoals();
-      document.getElementById("statusMessage").textContent = "Defaults restored.";
-    }
-
-    loadGoals();
+      location.reload();
+    });
   </script>
 </body>
 </html>
