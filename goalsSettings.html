@@ -167,7 +167,7 @@
         require_sale_today: document.getElementById("requireSaleToday").checked
       };
       console.log("Saving goals:", goalsData);
-      await saveGoals(userId, goalsData);
+      await saveGoals(goalsData);
       alert("Goals saved!");
     });
 
