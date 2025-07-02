@@ -168,7 +168,7 @@
       document.getElementById("requireSaleToday").checked = goals.require_sale_today;
     }
   });
-
+//Debug Save
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const goalsData = {
@@ -186,6 +186,21 @@
     await resetGoals(userId);
     location.reload();
   });
+
+    form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const goalsData = {
+    target_calls: parseInt(form.targetCalls.value),
+    avg_call_time: parseInt(form.targetAvgCallTime.value),
+    total_call_time: parseInt(form.targetTotalCallTime.value),
+    sales_target: parseInt(form.targetSales.value),
+    require_sale_today: document.getElementById("requireSaleToday").checked
+  };
+  console.log("Saving goals:", goalsData); // ✅ add this
+  await saveGoals(userId, goalsData);
+  alert("Goals saved!");
+});
+
 </script>
   </script>
 </body>
