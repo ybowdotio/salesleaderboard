@@ -1,10 +1,185 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <title>Sales Leaderboard</title>
-  </head>
-  <body>
-    <h1>Sales Leaderboard Functions Only</h1>
-    <p>Use the backend endpoints directly (e.g. <code>/.netlify/functions/syncReps</code>)</p>
-  </body>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Goldmine Sales Leaderboard</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background: #f5f8fa;
+      margin: 0;
+      padding: 2rem;
+      color: #33475b;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 1.75rem;
+      margin-bottom: 2rem;
+      color: #213343;
+    }
+
+    .leaderboard {
+      max-width: 960px;
+      margin: auto;
+      background: #ffffff;
+      border: 1px solid #dfe3e8;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .rep-row {
+      display: flex;
+      flex-direction: column;
+      border-bottom: 1px solid #f0f1f3;
+      padding: 1.25rem;
+      transition: background 0.3s ease;
+    }
+
+    .rep-row:hover {
+      background-color: #f9fafb;
+    }
+
+    .rep-name {
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      font-size: 1rem;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+    }
+
+    .metric {
+      position: relative;
+      background: #ebeff3;
+      border-radius: 6px;
+      height: 36px;
+      overflow: hidden;
+    }
+
+    .bar {
+      background: #00a4bd;
+      height: 100%;
+      width: 0;
+      position: absolute;
+      top: 0;
+      left: 0;
+      transition: width 1.5s ease-in-out;
+    }
+
+    .runner {
+      position: absolute;
+      bottom: 2px;
+      left: 0;
+      width: 28px;
+      height: 28px;
+      background: none;
+    }
+
+    .runner img {
+      width: 100%;
+      height: auto;
+    }
+
+    .label {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #33475b;
+    }
+
+    @media (max-width: 768px) {
+      .metrics {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Goldmine Sales Leaderboard</h1>
+  <div class="leaderboard" id="leaderboard"></div>
+
+  <script>
+    const reps = [
+      {
+        name: 'Alex Johnson',
+        calls: 80,
+        avgTime: '2:34',
+        totalTime: '3:45:10',
+        sales: '$14,300',
+        percent: { calls: 80, avgTime: 65, totalTime: 90, sales: 70 }
+      },
+      {
+        name: 'Taylor Smith',
+        calls: 65,
+        avgTime: '3:01',
+        totalTime: '2:50:22',
+        sales: '$11,200',
+        percent: { calls: 65, avgTime: 70, totalTime: 75, sales: 60 }
+      },
+      {
+        name: 'Morgan Lee',
+        calls: 92,
+        avgTime: '2:15',
+        totalTime: '4:12:50',
+        sales: '$17,850',
+        percent: { calls: 92, avgTime: 55, totalTime: 95, sales: 85 }
+      }
+    ];
+
+    const leaderboard = document.getElementById('leaderboard');
+
+    reps.forEach(rep => {
+      const repRow = document.createElement('div');
+      repRow.className = 'rep-row';
+
+      repRow.innerHTML = `
+        <div class="rep-name">${rep.name}</div>
+        <div class="metrics">
+          <div class="metric" data-metric="calls">
+            <div class="bar" style="width: ${rep.percent.calls}%"></div>
+            <div class="runner" style="left: ${rep.percent.calls}%">
+              <img src="/obstacles.gif" alt="Runner animation">
+            </div>
+            <div class="label">${rep.calls}</div>
+          </div>
+          <div class="metric" data-metric="avg-time">
+            <div class="bar" style="width: ${rep.percent.avgTime}%"></div>
+            <div class="runner" style="left: ${rep.percent.avgTime}%">
+              <img src="/obstacles.gif" alt="Runner animation">
+            </div>
+            <div class="label">${rep.avgTime}</div>
+          </div>
+          <div class="metric" data-metric="total-time">
+            <div class="bar" style="width: ${rep.percent.totalTime}%"></div>
+            <div class="runner" style="left: ${rep.percent.totalTime}%">
+              <img src="/obstacles.gif" alt="Runner animation">
+            </div>
+            <div class="label">${rep.totalTime}</div>
+          </div>
+          <div class="metric" data-metric="sales">
+            <div class="bar" style="width: ${rep.percent.sales}%"></div>
+            <div class="runner" style="left: ${rep.percent.sales}%">
+              <img src="/obstacles.gif" alt="Runner animation">
+            </div>
+            <div class="label">${rep.sales}</div>
+          </div>
+        </div>
+      `;
+
+      leaderboard.appendChild(repRow);
+    });
+  </script>
+</body>
 </html>
