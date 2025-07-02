@@ -20,10 +20,17 @@ export const loadGoals = async () => {
 
 export const saveGoals = async (goalsData) => {
   const payload = {
-    id: GOALS_ID,
+    id: 'global-goals',
     ...goalsData,
     updated_at: new Date().toISOString()
   };
+
+  const { error } = await supabase
+    .from('daily_goals')
+    .upsert(payload);
+
+  if (error) console.error('Error saving goals:', error);
+};
 
   const { error } = await supabase.from('daily_goals').upsert(payload);
   if (error) console.error('Error saving goals:', error);
