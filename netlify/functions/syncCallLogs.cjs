@@ -12,13 +12,14 @@ exports.handler = async function () {
     const HUBSPOT_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
     const todayISO = new Date().toISOString().split('T')[0];
 
-    let calls = [];
+    const urlBase = 'https://api.hubapi.com/crm/v3/objects/calls';
     let after = undefined;
-    let more = true;
+    let todayCalls = [];
+    let scanned = 0;
 
-    while (more && calls.length < 30) {
-      const url = new URL('https://api.hubapi.com/crm/v3/objects/calls');
-      url.searchParams.set('limit', '30');
+    while (true) {
+      const url = new URL(urlBase);
+      url.searchParams.set('limit', '100');
       url.searchParams.set('properties', [
         'hs_timestamp',
         'hs_createdate',
@@ -45,25 +46,25 @@ exports.handler = async function () {
 
       const data = await response.json();
       const results = data.results || [];
+      scanned += results.length;
 
-      calls.push(...results);
+      const todays = results.filter(c => {
+        const props = c.properties || {};
+        const date = props.hs_timestamp || props.hs_createdate;
+        return date && date.startsWith(todayISO);
+      });
 
-      if (data.paging && data.paging.next) {
-        after = data.paging.next.after;
-      } else {
-        more = false;
-      }
+      todayCalls.push(...todays);
+
+      if (!data.paging?.next || todayCalls.length >= 300) break;
+      after = data.paging.next.after;
     }
 
-    const callsToday = calls.filter(c => {
-      const props = c.properties || {};
-      const date = props.hs_timestamp || props.hs_createdate;
-      return date && date.startsWith(todayISO);
-    });
+    console.info(`Scanned ${scanned} calls, ${todayCalls.length} matched today (${todayISO})`);
 
-    console.info(`Fetched ${calls.length} calls, ${callsToday.length} match today's date.`);
+    let inserted = 0;
 
-    for (const call of callsToday) {
+    for (const call of todayCalls) {
       const props = call.properties;
 
       const { error } = await supabase.from('calls').upsert({
@@ -82,16 +83,14 @@ exports.handler = async function () {
       if (error) {
         console.error(`❌ Error saving call ${call.id}`, error.message);
       } else {
+        inserted++;
         console.info(`✅ Saved call ${call.id}`);
       }
     }
 
     return {
       statusCode: 200,
-      body: JSON.stringify({
-        success: true,
-        inserted: callsToday.length,
-      }),
+      body: JSON.stringify({ success: true, inserted }),
     };
   } catch (e) {
     console.error('Fatal error in syncCallLogs', e);
