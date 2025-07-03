@@ -129,7 +129,7 @@ exports.handler = async () => {
         contact_id: contactId,
         owner_id: props.hubspot_owner_id || null,
         duration_seconds: props.hs_call_duration ? parseInt(props.hs_call_duration) : null,
-        direction: props.direction || null,
+        direction: props.direction || 'UNKNOWN',
         contact_name: contactName || null,
         owner_name: ownerName || null,
         timestamp_iso: timestampISO,
