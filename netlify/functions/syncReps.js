@@ -2,6 +2,7 @@
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
+// Env variables
 const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -9,7 +10,7 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 exports.handler = async () => {
-  console.info('👥 Starting reps sync...');
+  console.info('🔁 Starting rep sync...');
 
   if (!HUBSPOT_PRIVATE_APP_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     console.error('❌ Missing environment variables');
@@ -17,43 +18,50 @@ exports.handler = async () => {
   }
 
   try {
-    const ownersResponse = await axios.get(
-      'https://api.hubapi.com/crm/v3/owners/',
-      {
-        headers: {
-          Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
-          'Content-Type': 'application/json'
-        }
+    const response = await axios.get('https://api.hubapi.com/crm/v3/owners/', {
+      headers: {
+        Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
+        'Content-Type': 'application/json'
       }
-    );
+    });
 
-    const owners = ownersResponse.data.results || [];
+    const owners = response.data.results || [];
+    console.info(`📥 Pulled ${owners.length} owners from HubSpot`);
 
-    const reps = owners
-      .filter(o => o.fullName) // ✅ Skip owners with null names
-      .map(o => ({
-        id: o.id,
-        name: o.fullName,
-        email: o.email || null,
-        created_at: new Date().toISOString()
-      }));
+    const reps = owners.map((owner) => {
+      const first = owner.firstName || '';
+      const last = owner.lastName || '';
+      const name = (first + ' ' + last).trim() || owner.email || 'Unknown';
 
-    console.info(`📥 Prepared ${reps.length} reps to upsert`);
+      return {
+        id: owner.id,
+        name,
+        email: owner.email || null
+      };
+    });
 
-    const { error } = await supabase.from('reps').upsert(reps, { onConflict: ['id'] });
+    if (reps.length === 0) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ message: '✅ Synced 0 reps', sample: [] })
+      };
+    }
+
+    const { error } = await supabase.from('reps').upsert(reps, {
+      onConflict: ['id']
+    });
 
     if (error) {
       console.error('❌ Supabase upsert error:', error);
       return { statusCode: 500, body: JSON.stringify(error) };
     }
 
-    console.info(`✅ Synced ${reps.length} reps`);
     return {
       statusCode: 200,
       body: JSON.stringify({ message: `✅ Synced ${reps.length} reps`, sample: reps.slice(0, 2) })
     };
   } catch (err) {
-    console.error('❌ Unexpected error during reps sync:', err);
+    console.error('❌ Unexpected error:', err);
     return { statusCode: 500, body: err.toString() };
   }
 };
