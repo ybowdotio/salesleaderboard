@@ -45,18 +45,30 @@ exports.handler = async () => {
     let hasMore = true;
     while(hasMore) {
       const hsUrl = 'https://api.hubapi.com/crm/v3/objects/calls/search';
+      
+      // --- THE FIX IS HERE ---
+      // Start with the base filters that are always present.
+      const filters = [
+        { propertyName: 'hs_timestamp', operator: 'GTE', value: nextCursor },
+        { propertyName: 'hs_timestamp', operator: 'LTE', value: endOfMonth }
+      ];
+
+      // Conditionally add the NOT_IN filter only if the list is not empty.
+      if (lastProcessedIds.length > 0) {
+        filters.push({
+            propertyName: 'hs_object_id',
+            operator: 'NOT_IN',
+            values: lastProcessedIds
+        });
+      }
+      
       const requestBody = {
-        filterGroups: [{
-          filters: [
-            { propertyName: 'hs_timestamp', operator: 'GTE', value: nextCursor },
-            { propertyName: 'hs_timestamp', operator: 'LTE', value: endOfMonth },
-            { propertyName: 'hs_object_id', operator: 'NOT_IN', values: lastProcessedIds }
-          ]
-        }],
+        filterGroups: [{ filters: filters }], // Use the dynamically built filters array
         sorts: [{ propertyName: 'hs_timestamp', direction: 'ASCENDING' }],
         properties: [ 'hs_timestamp', 'hubspot_owner_id', 'hs_call_duration', 'hs_call_from_number', 'hs_call_to_number', 'hs_call_disposition', 'hs_call_body' ],
         limit: 100
       };
+      // --- END OF FIX ---
 
       const response = await fetch(hsUrl, { method: 'POST', headers: { 'Authorization': `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`, 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
       if (!response.ok) { throw new Error(`HubSpot API Error: ${await response.text()}`); }
