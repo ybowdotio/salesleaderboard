@@ -8,34 +8,25 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 exports.handler = async () => {
-  console.info('Starting sync...');
-
+  console.info('🔄 Starting sync...');
   if (!HUBSPOT_PRIVATE_APP_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    console.error('Missing environment variables');
+    console.error('❌ Missing environment variables');
     return { statusCode: 500, body: 'Missing environment variables' };
   }
 
   try {
-    const todayISO = new Date().toISOString().split('T')[0]; // e.g. '2025-07-03'
-    const startOfTodayUnix = new Date(`${todayISO}T00:00:00.000Z`).getTime();
+    const todayISO = new Date().toISOString().split('T')[0]; // e.g., '2025-07-02'
 
     const callsResponse = await axios.post(
       'https://api.hubapi.com/crm/v3/objects/calls/search',
       {
-        filterGroups: [{
-          filters: [{
-            propertyName: 'hs_timestamp',
-            operator: 'GTE',
-            value: startOfTodayUnix
-          }]
-        }],
-        limit: 30,
+        limit: 100,
+        sorts: ['-hs_timestamp'],
         properties: [
           'hs_timestamp',
           'direction',
           'hs_call_duration',
-          'hubspot_owner_id',
-          'hs_call_title'
+          'hubspot_owner_id'
         ]
       },
       {
@@ -47,39 +38,25 @@ exports.handler = async () => {
     );
 
     const calls = callsResponse.data.results;
-    console.info(`Fetched ${calls.length} calls`);
+    console.info(`📞 Pulled ${calls.length} calls from HubSpot`);
+
     const allCalls = [];
 
     for (const call of calls) {
       const props = call.properties || {};
-      let timestampRaw = props.hs_timestamp;
-      let timestamp = null;
+      const timestampRaw = props.hs_timestamp;
 
-      if (timestampRaw && !isNaN(Number(timestampRaw))) {
-        timestamp = new Date(Number(timestampRaw));
-      } else if (call.createdAt) {
-        try {
-          timestamp = new Date(call.createdAt);
-          if (isNaN(timestamp.getTime())) throw new Error();
-          console.debug(`Using fallback createdAt for call ID: ${call.id}`);
-        } catch {
-          console.warn(`Skipping call with invalid fallback timestamp. Call ID: ${call.id}`);
-          continue;
-        }
-      } else {
-        console.warn(`Skipping call with no usable timestamp. Call ID: ${call.id}`);
+      if (!timestampRaw || !timestampRaw.startsWith(todayISO)) {
+        console.info(`⏭️ Skipping call outside today. Call ID: ${call.id}`);
         continue;
       }
 
+      const timestamp = new Date(timestampRaw);
       const timestampISO = timestamp.toISOString();
       const timestampDate = timestampISO.split('T')[0];
       const timestampYear = timestamp.getFullYear();
 
-      if (timestamp < startOfTodayUnix) {
-        console.info(`Skipping call before today. Call ID: ${call.id}`);
-        continue;
-      }
-
+      // Fetch contact association
       let contactId = null;
       try {
         const assocRes = await axios.get(
@@ -92,15 +69,13 @@ exports.handler = async () => {
           }
         );
         contactId = assocRes.data?.results?.[0]?.toObjectId;
-      } catch (err) {
-        console.warn(`Failed to fetch contact association for call ID: ${call.id}`);
+      } catch {
+        console.warn(`⚠️ No contact association for call ID: ${call.id}`);
       }
 
-      if (!contactId) {
-        console.warn(`Skipping call without contact ID. Call ID: ${call.id}`);
-        continue;
-      }
+      if (!contactId) continue;
 
+      // Get contact name
       let contactName = null;
       try {
         const contactRes = await axios.get(
@@ -114,10 +89,11 @@ exports.handler = async () => {
         );
         const cp = contactRes.data.properties;
         contactName = `${cp.firstname || ''} ${cp.lastname || ''}`.trim();
-      } catch (err) {
-        console.warn(`Failed to fetch contact name for ID: ${contactId}`);
+      } catch {
+        console.warn(`⚠️ Couldn't get name for contact ID: ${contactId}`);
       }
 
+      // Get owner name
       let ownerName = null;
       if (props.hubspot_owner_id) {
         try {
@@ -131,8 +107,8 @@ exports.handler = async () => {
             }
           );
           ownerName = ownerRes.data.fullName;
-        } catch (err) {
-          console.warn(`Failed to fetch owner name for ID: ${props.hubspot_owner_id}`);
+        } catch {
+          console.warn(`⚠️ Couldn't fetch owner ${props.hubspot_owner_id}`);
         }
       }
 
@@ -151,22 +127,25 @@ exports.handler = async () => {
     }
 
     if (allCalls.length === 0) {
-      console.info('No call records to sync.');
+      console.info('🟡 No call records to sync.');
       return { statusCode: 200, body: 'No call records to sync.' };
     }
 
-    console.info(`Upserting ${allCalls.length} call record(s) into Supabase...`);
+    console.info(`🛠️ Upserting ${allCalls.length} call(s) to Supabase...`);
     const { error } = await supabase.from('calls').upsert(allCalls, { onConflict: ['call_id'] });
 
     if (error) {
-      console.error('Upsert error:', error);
+      console.error('❌ Upsert error:', error);
       return { statusCode: 500, body: JSON.stringify(error) };
     }
 
-    console.info('Sync complete.');
-    return { statusCode: 200, body: 'Sync complete.' };
+    console.info('✅ Sync complete.');
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ message: `✅ Synced ${allCalls.length} calls`, timestamp: new Date().toISOString() })
+    };
   } catch (error) {
-    console.error('Error during sync:', error);
+    console.error('❌ Fatal error during sync:', error);
     return { statusCode: 500, body: error.toString() };
   }
 };
