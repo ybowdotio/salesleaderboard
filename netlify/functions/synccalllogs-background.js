@@ -1,14 +1,16 @@
-import { createClient } from '@supabase/supabase-js';
-import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc';
-import timezone from 'dayjs/plugin/timezone';
+// Using CommonJS 'require' syntax
+const { createClient } = require('@supabase/supabase-js');
+const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-export const handler = async () => {
+// Using 'exports.handler' for CommonJS
+exports.handler = async () => {
   const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
   const SUPABASE_URL = process.env.SUPABASE_URL;
   const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -50,7 +52,6 @@ export const handler = async () => {
           filters: [
             { propertyName: 'hs_timestamp', operator: 'GTE', value: nextCursor },
             { propertyName: 'hs_timestamp', operator: 'LTE', value: endOfMonth },
-            // This line prevents infinite loops for records with the same timestamp
             { propertyName: 'hs_object_id', operator: 'NIN', values: lastProcessedIds }
           ]
         }],
@@ -74,7 +75,6 @@ export const handler = async () => {
         
         const newCursor = calls[calls.length - 1].properties.hs_timestamp;
 
-        // This logic block manages the exclusion list
         if (newCursor === nextCursor) {
             lastProcessedIds.push(...calls.map(c => c.id));
         } else {
