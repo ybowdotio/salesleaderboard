@@ -5,16 +5,16 @@ exports.handler = async function () {
   const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    console.error('Missing Supabase env vars');
+    const msg = 'Missing Supabase environment variables';
+    console.error(msg);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Missing Supabase env vars' }),
+      body: JSON.stringify({ error: msg }),
     };
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // Define raw SQL that aggregates yesterday's leaderboard stats
   const rawSQL = `
     insert into today_leaderboard_stats (
       log_date,
@@ -44,28 +44,55 @@ exports.handler = async function () {
   `;
 
   try {
-    const { error } = await supabase.rpc('execute_raw_sql', {
-      sql: rawSQL,
-    });
+    const { error } = await supabase.rpc('execute_raw_sql', { sql: rawSQL });
 
     if (error) {
       console.error('Leaderboard stats sync failed:', error);
+
+      // Log error to sync_logs
+      await supabase.from('sync_logs').insert({
+        function_name: 'syncLeaderboardStats',
+        status: 'error',
+        message: error.message || JSON.stringify(error),
+      });
+
       return {
         statusCode: 500,
-        body: JSON.stringify({ error: 'Failed to sync leaderboard stats' }),
+        body: JSON.stringify({
+          error: 'Failed to sync leaderboard stats',
+          details: error.message,
+        }),
       };
     }
 
     console.log('✅ Leaderboard stats synced for yesterday.');
+
+    await supabase.from('sync_logs').insert({
+      function_name: 'syncLeaderboardStats',
+      status: 'success',
+      message: 'Leaderboard stats synced successfully.',
+    });
+
     return {
       statusCode: 200,
       body: JSON.stringify({ success: true }),
     };
   } catch (err) {
     console.error('Unexpected error during leaderboard sync:', err);
+
+    await supabase.from('sync_logs').insert({
+      function_name: 'syncLeaderboardStats',
+      status: 'error',
+      message: err.message || 'Unexpected error',
+    });
+
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Unexpected server error' }),
+      body: JSON.stringify({
+        error: 'Unexpected server error',
+        message: err.message,
+        stack: err.stack,
+      }),
     };
   }
 };
