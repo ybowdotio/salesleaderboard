@@ -1,77 +1,71 @@
-// netlify/functions/syncLeaderboardStats.js
 const { createClient } = require('@supabase/supabase-js');
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+exports.handler = async function () {
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-exports.handler = async () => {
-  console.info('📊 Starting syncLeaderboardStats...');
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('Missing Supabase env vars');
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Missing Supabase env vars' }),
+    };
+  }
 
-  // Calculate yesterday date in Chicago timezone for log_date
-  const now = new Date();
-  const chicagoOffsetHours = 5; // adjust to 6 if DST applies
-  const utcMillis = now.getTime();
-  const chicagoMillis = utcMillis - chicagoOffsetHours * 60 * 60 * 1000;
-  const chicagoDate = new Date(chicagoMillis);
-  chicagoDate.setHours(0, 0, 0, 0);
-  const log_date = chicagoDate.toISOString().split('T')[0];
-  console.info(`🗓️ Using log_date: ${log_date}`);
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  // Define raw SQL that aggregates yesterday's leaderboard stats
+  const rawSQL = `
+    insert into today_leaderboard_stats (
+      log_date,
+      rep_id,
+      rep_name,
+      total_outbound_calls,
+      total_call_time,
+      avg_call_time
+    )
+    select
+      timezone('America/Chicago', c.hs_timestamp)::date as log_date,
+      c.owner_id as rep_id,
+      r.name as rep_name,
+      count(*) as total_outbound_calls,
+      sum(c.duration_seconds) as total_call_time,
+      avg(c.duration_seconds)::int as avg_call_time
+    from calls c
+    join reps r on c.owner_id = r.id
+    where timezone('America/Chicago', c.hs_timestamp)::date = (current_date at time zone 'America/Chicago') - interval '1 day'
+    group by log_date, rep_id, rep_name
+    on conflict (log_date, rep_id)
+    do update set
+      rep_name = excluded.rep_name,
+      total_outbound_calls = excluded.total_outbound_calls,
+      total_call_time = excluded.total_call_time,
+      avg_call_time = excluded.avg_call_time;
+  `;
 
   try {
-    // Step 1: Query aggregated call data from 'calls' table for log_date
-    const { data: aggregatedCalls, error: selectError } = await supabase
-      .from('calls')
-      .select(`
-        owner_id,
-        owner_name,
-        total_calls:count,
-        avg_call_time:avg(duration_seconds),
-        total_call_time:sum(duration_seconds)
-      `)
-      .eq('timestamp_date', log_date)
-      .group('owner_id,owner_name')
-      .order('total_calls', { ascending: false });
+    const { error } = await supabase.rpc('execute_raw_sql', {
+      sql: rawSQL,
+    });
 
-    if (selectError) {
-      console.error('❌ Error fetching aggregated calls:', selectError);
-      return { statusCode: 500, body: JSON.stringify(selectError) };
+    if (error) {
+      console.error('Leaderboard stats sync failed:', error);
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Failed to sync leaderboard stats' }),
+      };
     }
 
-    console.info(`📞 Aggregated ${aggregatedCalls.length} reps with calls`);
-
-    // Step 2: Map results to insertable/updatable rows for leaderboard table
-    const rowsToUpsert = aggregatedCalls.map((row) => ({
-      log_date,
-      rep_id: row.owner_id,
-      rep_name: row.owner_name || 'Unknown Rep',
-      total_outbound_calls: row.total_calls,
-      avg_call_time: Math.round(row.avg_call_time || 0),
-      total_call_time: row.total_call_time || 0,
-    }));
-
-    if (rowsToUpsert.length === 0) {
-      console.info('🚫 No leaderboard rows to upsert');
-      return { statusCode: 200, body: 'No leaderboard rows to upsert' };
-    }
-
-    // Step 3: Upsert leaderboard rows into 'today_leaderboard_stats' table
-    const { error: upsertError } = await supabase
-      .from('today_leaderboard_stats')
-      .upsert(rowsToUpsert, {
-        onConflict: ['log_date', 'rep_id'],
-      });
-
-    if (upsertError) {
-      console.error('❌ Error upserting leaderboard rows:', upsertError);
-      return { statusCode: 500, body: JSON.stringify(upsertError) };
-    }
-
-    console.info(`✅ Synced ${rowsToUpsert.length} leaderboard rows for ${log_date}`);
-    return { statusCode: 200, body: `Synced ${rowsToUpsert.length} leaderboard rows for ${log_date}` };
+    console.log('✅ Leaderboard stats synced for yesterday.');
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ success: true }),
+    };
   } catch (err) {
-    console.error('❌ Unexpected error:', err);
-    return { statusCode: 500, body: err.toString() };
+    console.error('Unexpected error during leaderboard sync:', err);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Unexpected server error' }),
+    };
   }
 };
