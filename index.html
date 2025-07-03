@@ -67,7 +67,15 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- We need dayjs for correct timezone handling -->
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/utc.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/timezone.js"></script>
   <script>
+    // --- INITIALIZE DAYJS PLUGINS ---
+    dayjs.extend(window.dayjs_plugin_utc);
+    dayjs.extend(window.dayjs_plugin_timezone);
+
     // --- CONFIGURATION ---
     const SUPABASE_URL = 'https://vmifmysnxolecfpidttr.supabase.co'; 
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtaWZteXNueG9sZWNmcGlkdHRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEzODQ4NzksImV4cCI6MjA2Njk2MDg3OX0.3h-lHze2gA0y2Y3CCjPmAzyzI7Fe_FL3HCP0Tr4uMrU';
@@ -79,33 +87,16 @@
 
     // --- HELPER FUNCTIONS ---
 
-    /**
-     * Formats seconds into a more readable MM:SS or HH:MM:SS format.
-     * @param {number} totalSeconds - The total seconds to format.
-     * @returns {string} The formatted time string.
-     */
     function formatTime(totalSeconds) {
       if (isNaN(totalSeconds) || totalSeconds < 0) return '00:00';
       const hours = Math.floor(totalSeconds / 3600);
       const minutes = Math.floor((totalSeconds % 3600) / 60);
       const seconds = Math.floor(totalSeconds % 60);
-      
       const pad = (num) => num.toString().padStart(2, '0');
-
-      if (hours > 0) {
-        return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
-      }
+      if (hours > 0) { return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`; }
       return `${pad(minutes)}:${pad(seconds)}`;
     }
     
-    /**
-     * Renders a single progress bar metric.
-     * @param {string} label - The text label to display (e.g., the raw number).
-     * @param {number} value - The current value of the metric.
-     * @param {number} goal - The goal for this metric.
-     * @param {string} colorClass - The Tailwind CSS background color class for the bar.
-     * @returns {string} The HTML for the metric cell.
-     */
     function renderMetric(label, value, goal, colorClass = 'bg-gray-500') {
       const percentage = goal > 0 ? Math.min((value / goal) * 100, 100) : 0;
       const overGoal = goal > 0 && value > goal;
@@ -129,11 +120,6 @@
       `;
     }
 
-    /**
-     * Creates and appends a row for a single sales rep to the leaderboard.
-     * @param {object} repData - The data for the sales rep from the database.
-     * @param {object} goals - The mapped goal data for all metrics.
-     */
     function renderRepRow(repData, goals) {
       const repRow = document.createElement('div');
       repRow.className = 'grid md:grid-cols-5 gap-4 items-center bg-white p-4 rounded-xl shadow-sm border border-gray-200';
@@ -145,10 +131,7 @@
       const mtdSales = repData.sales_total || 0;
 
       repRow.innerHTML = `
-        <!-- Rep Name (visible on all screen sizes) -->
         <div class="font-bold text-lg text-gray-900">${repName}</div>
-        
-        <!-- Metrics -->
         <div class="md:text-center">
           <span class="md:hidden font-semibold text-gray-500">Total Calls: </span>
           ${renderMetric(totalCalls.toLocaleString(), totalCalls, goals.calls, 'bg-blue-500')}
@@ -172,27 +155,24 @@
     // --- MAIN FUNCTION ---
     async function loadLeaderboard() {
       try {
-        // Fetch stats data
+        // THE FIX: Calculate today's date using the correct timezone to match the database.
+        const todayInChicago = dayjs().tz('America/Chicago').format('YYYY-MM-DD');
+
         const { data: stats, error: statsError } = await supabase
           .from('today_leaderboard_stats')
           .select('*')
+          .eq('log_date', todayInChicago) // Query for the correct date
           .order('total_outbound_calls', { ascending: false });
 
         if (statsError) throw statsError;
 
-        // --- DEMONSTRATION GOALS ---
-        // The goals in your 'daily_goals' table are very high, causing the progress bars
-        // to appear empty. I'm using more realistic goals here for demonstration.
-        // PLEASE ADJUST THE VALUES IN YOUR 'daily_goals' TABLE TO REFLECT YOUR ACTUAL TARGETS.
         const goals = {
-            calls: 50, // Example: 50 calls
-            avg_call_time: 180, // Example: 3 minutes (180 seconds)
-            total_call_time: 14400, // Example: 4 hours (14400 seconds)
-            sales: 5000 // Example: $5,000
+            calls: 50,
+            avg_call_time: 180,
+            total_call_time: 14400,
+            sales: 5000
         };
-        // --- END DEMONSTRATION GOALS ---
 
-        // Clear loading state and any previous content
         leaderboardContainer.innerHTML = '';
 
         if (!stats || stats.length === 0) {
@@ -200,7 +180,6 @@
           return;
         }
 
-        // Render each rep's row
         stats.forEach(repData => renderRepRow(repData, goals));
 
       } catch (error) {
