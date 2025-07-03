@@ -44,12 +44,12 @@ exports.handler = async function () {
   `;
 
   try {
+    console.log('📤 About to send raw SQL to Supabase...');
     const { error } = await supabase.rpc('execute_raw_sql', { sql: rawSQL });
 
     if (error) {
       console.error('Leaderboard stats sync failed:', error);
 
-      // Log error to sync_logs
       await supabase.from('sync_logs').insert({
         function_name: 'syncLeaderboardStats',
         status: 'error',
@@ -74,25 +74,4 @@ exports.handler = async function () {
     });
 
     return {
-      statusCode: 200,
-      body: JSON.stringify({ success: true }),
-    };
-  } catch (err) {
-    console.error('Unexpected error during leaderboard sync:', err);
-
-    await supabase.from('sync_logs').insert({
-      function_name: 'syncLeaderboardStats',
-      status: 'error',
-      message: err.message || 'Unexpected error',
-    });
-
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        error: 'Unexpected server error',
-        message: err.message,
-        stack: err.stack,
-      }),
-    };
-  }
-};
+      statusCode
