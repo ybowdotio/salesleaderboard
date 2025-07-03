@@ -225,73 +225,86 @@
   </div>
   <div class="leaderboard" id="leaderboard"></div>
 
-  <script>
-    const reps = [
-      {
-        name: 'Alex Johnson',
-        calls: 140,
-        avgTime: '2:34',
-        totalTime: '3:20:00',
-        sales: '$14,300',
-        percent: { calls: 116, avgTime: 65, totalTime: 111, sales: 70 },
-        goals: { badge: '✓', type: 'Calls', todaySale: true }
-      },
-      {
-        name: 'Taylor Smith',
-        calls: 65,
-        avgTime: '3:01',
-        totalTime: '2:50:22',
-        sales: '$11,200',
-        percent: { calls: 65, avgTime: 70, totalTime: 75, sales: 60 },
-        goals: { badge: '⚠', type: 'None', todaySale: false }
-      },
-      {
-        name: 'Morgan Lee',
-        calls: 92,
-        avgTime: '2:15',
-        totalTime: '4:12:50',
-        sales: '$17,850',
-        percent: { calls: 92, avgTime: 55, totalTime: 95, sales: 85 },
-        goals: { badge: '🏆', type: 'All 3', todaySale: true }
-      }
-    ];
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const supabase = window.supabase.createClient(
+    'https://vmifmysnxolecfpidttr.supabase.co',  // 🔁 change this
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtaWZteXNueG9sZWNmcGlkdHRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEzODQ4NzksImV4cCI6MjA2Njk2MDg3OX0.3h-lHze2gA0y2Y3CCjPmAzyzI7Fe_FL3HCP0Tr4uMrU'                    // 🔁 change this
+  );
 
-    const leaderboard = document.getElementById('leaderboard');
+  const leaderboard = document.getElementById('leaderboard');
 
-    reps.forEach(rep => {
-      const repRow = document.createElement('div');
-      repRow.className = 'rep-row';
+  function renderRep(rep) {
+    const repRow = document.createElement('div');
+    repRow.className = 'rep-row';
 
-      const over = value => value > 100 ? ' over' : '';
-      const goalClass = rep.goals.type === 'All 3' ? 'goal-complete' : rep.goals.type === 'None' ? 'goal-none' : 'goal-partial';
+    const over = value => value > 100 ? ' over' : '';
+    const goalClass = 'goal-none';
 
-      repRow.innerHTML = `
-        <div class="rep-name">${rep.name}</div>
-        <div class="metrics">
-          ${['calls', 'avgTime', 'totalTime', 'sales'].map(key => {
-            const value = rep.percent[key];
-            const label = key === 'calls' ? rep.calls : key === 'avgTime' ? rep.avgTime : key === 'totalTime' ? rep.totalTime : rep.sales;
-            const showGreenCheck = key !== 'sales' && value >= 100;
-            const isSales = key === 'sales';
-            const showStar = isSales && rep.goals.todaySale;
-            return `
-              <div class="metric">
-                <div class="bar${over(value)}" style="width: ${Math.min(value, 100)}%"></div>
-                <div class="runner" style="left: ${Math.min(value, 100)}%">
-                  <img src="obstacles.gif" alt="Runner">
-                  ${showGreenCheck ? '<div class="badge-icon">✓</div>' : ''}
-                  ${showStar ? '<div class="sale-star" title="Sale made today!">✨</div>' : ''}
-                </div>
-                <div class="label">${label}</div>
+    const calls = rep.total_outbound_calls;
+    const avgSeconds = rep.avg_call_time || 0;
+    const totalSeconds = rep.total_call_time || 0;
+
+    const avgTime = new Date(avgSeconds * 1000).toISOString().substr(14, 5);
+    const totalTime = new Date(totalSeconds * 1000).toISOString().substr(11, 8);
+
+    const percent = {
+      calls: Math.min(calls, 100),
+      avgTime: 60 + Math.random() * 40,
+      totalTime: Math.min(totalSeconds / 60, 100),
+      sales: Math.floor(Math.random() * 100 + 1)
+    };
+
+    repRow.innerHTML = `
+      <div class="rep-name">${rep.rep_name}</div>
+      <div class="metrics">
+        ${['calls', 'avgTime', 'totalTime', 'sales'].map(key => {
+          const value = percent[key];
+          const label =
+            key === 'calls' ? calls :
+            key === 'avgTime' ? avgTime :
+            key === 'totalTime' ? totalTime :
+            `$${(rep.sales_total || 0).toLocaleString()}`;
+
+          return `
+            <div class="metric">
+              <div class="bar${over(value)}" style="width: ${Math.min(value, 100)}%"></div>
+              <div class="runner" style="left: ${Math.min(value, 100)}%">
+                <img src="obstacles.gif" alt="Runner">
               </div>
-            `;
-          }).join('')}
-          <div class="goal-badge ${goalClass}">${rep.goals.badge}</div>
-        </div>
-      `;
+              <div class="label">${label}</div>
+            </div>
+          `;
+        }).join('')}
+        <div class="goal-badge ${goalClass}">—</div>
+      </div>
+    `;
 
-      leaderboard.appendChild(repRow);
-    });
-  </script>
-</body>
-</html>
+    leaderboard.appendChild(repRow);
+  }
+
+  async function loadLeaderboard() {
+    const today = new Date().toISOString().split('T')[0];
+
+    const { data, error } = await supabase
+      .from('today_leaderboard_stats')
+      .select('*')
+      .eq('log_date', today)
+      .order('total_outbound_calls', { ascending: false });
+
+    if (error) {
+      leaderboard.innerHTML = '<p style="color:red">Failed to load leaderboard.</p>';
+      console.error(error);
+      return;
+    }
+
+    if (data.length === 0) {
+      leaderboard.innerHTML = '<p>No call data yet for today.</p>';
+      return;
+    }
+
+    data.forEach(renderRep);
+  }
+
+  loadLeaderboard();
+</script>
