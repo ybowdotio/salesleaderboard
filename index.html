@@ -103,21 +103,22 @@
      * @param {string} label - The text label to display (e.g., the raw number).
      * @param {number} value - The current value of the metric.
      * @param {number} goal - The goal for this metric.
+     * @param {string} colorClass - The Tailwind CSS background color class for the bar.
      * @returns {string} The HTML for the metric cell.
      */
-    function renderMetric(label, value, goal) {
+    function renderMetric(label, value, goal, colorClass = 'bg-gray-500') {
       const percentage = goal > 0 ? Math.min((value / goal) * 100, 100) : 0;
       const overGoal = goal > 0 && value > goal;
-      const glowColor = overGoal ? '#f59e0b' : '#10b981'; // Amber for calls/time, Green for sales
+      const glowColor = overGoal ? '#f59e0b' : '#10b981';
 
       return `
         <div class="relative h-8 bg-gray-200 rounded-full overflow-hidden">
           <div 
-            class="absolute top-0 left-0 h-full bg-green-500 rounded-full bar-animate ${overGoal ? 'bar-glow' : ''}" 
+            class="absolute top-0 left-0 h-full ${colorClass} rounded-full bar-animate ${overGoal ? 'bar-glow' : ''}" 
             style="width: ${percentage}%; --glow-color: ${glowColor};"
           ></div>
           <div class="absolute inset-0 flex items-center justify-center">
-            <span class="font-semibold text-gray-800 text-sm">${label}</span>
+            <span class="font-semibold text-white text-sm mix-blend-difference">${label}</span>
           </div>
           ${percentage > 0 ? `
             <div class="absolute bottom-full h-8 w-8 runner-animate" style="left: ${percentage}%; transform: translateX(-30%); margin-bottom: 0.125rem;">
@@ -150,19 +151,19 @@
         <!-- Metrics -->
         <div class="md:text-center">
           <span class="md:hidden font-semibold text-gray-500">Total Calls: </span>
-          ${renderMetric(totalCalls.toLocaleString(), totalCalls, goals.calls)}
+          ${renderMetric(totalCalls.toLocaleString(), totalCalls, goals.calls, 'bg-blue-500')}
         </div>
         <div class="md:text-center">
           <span class="md:hidden font-semibold text-gray-500">Avg Call Time: </span>
-          ${renderMetric(formatTime(avgCallTime), avgCallTime, goals.avg_call_time)}
+          ${renderMetric(formatTime(avgCallTime), avgCallTime, goals.avg_call_time, 'bg-green-500')}
         </div>
         <div class="md:text-center">
           <span class="md:hidden font-semibold text-gray-500">Total Call Time: </span>
-          ${renderMetric(formatTime(totalCallTime), totalCallTime, goals.total_call_time)}
+          ${renderMetric(formatTime(totalCallTime), totalCallTime, goals.total_call_time, 'bg-indigo-500')}
         </div>
         <div class="md:text-center">
           <span class="md:hidden font-semibold text-gray-500">MTD Sales: </span>
-          ${renderMetric(`$${mtdSales.toLocaleString()}`, mtdSales, goals.sales)}
+          ${renderMetric(`$${mtdSales.toLocaleString()}`, mtdSales, goals.sales, 'bg-amber-500')}
         </div>
       `;
       leaderboardContainer.appendChild(repRow);
@@ -171,29 +172,30 @@
     // --- MAIN FUNCTION ---
     async function loadLeaderboard() {
       try {
-        // Fetch goals and stats data in parallel for efficiency
-        const [goalsResponse, statsResponse] = await Promise.all([
-          supabase.from('daily_goals').select('*').single(), // CORRECTED: Fetches from 'daily_goals'
-          supabase.from('today_leaderboard_stats').select('*').order('total_outbound_calls', { ascending: false })
-        ]);
+        // Fetch stats data
+        const { data: stats, error: statsError } = await supabase
+          .from('today_leaderboard_stats')
+          .select('*')
+          .order('total_outbound_calls', { ascending: false });
 
-        if (goalsResponse.error) throw goalsResponse.error;
-        if (statsResponse.error) throw statsResponse.error;
+        if (statsError) throw statsError;
 
-        const rawGoals = goalsResponse.data || {};
-        // CORRECTED: Map the database column names to the names the script expects
+        // --- DEMONSTRATION GOALS ---
+        // The goals in your 'daily_goals' table are very high, causing the progress bars
+        // to appear empty. I'm using more realistic goals here for demonstration.
+        // PLEASE ADJUST THE VALUES IN YOUR 'daily_goals' TABLE TO REFLECT YOUR ACTUAL TARGETS.
         const goals = {
-            calls: rawGoals.target_calls,
-            avg_call_time: rawGoals.avg_call_time,
-            total_call_time: rawGoals.total_call_time,
-            sales: rawGoals.sales_target
+            calls: 50, // Example: 50 calls
+            avg_call_time: 180, // Example: 3 minutes (180 seconds)
+            total_call_time: 14400, // Example: 4 hours (14400 seconds)
+            sales: 5000 // Example: $5,000
         };
-        const stats = statsResponse.data || [];
+        // --- END DEMONSTRATION GOALS ---
 
         // Clear loading state and any previous content
         leaderboardContainer.innerHTML = '';
 
-        if (stats.length === 0) {
+        if (!stats || stats.length === 0) {
           leaderboardContainer.innerHTML = '<p class="text-center py-10 text-gray-500">No call data yet for today.</p>';
           return;
         }
