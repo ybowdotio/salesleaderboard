@@ -49,6 +49,7 @@ exports.handler = async function () {
 
     if (error) {
       console.error('Leaderboard stats sync failed:', error);
+
       await supabase.from('sync_logs').insert({
         function_name: 'syncLeaderboardStats',
         status: 'error',
