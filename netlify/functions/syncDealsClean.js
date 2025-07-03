@@ -6,6 +6,17 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// ✅ helper: write to sync_logs
+async function logSync({ type, status, message }) {
+  try {
+    await supabase.from('sync_logs').insert([
+      { type, status, message }
+    ]);
+  } catch (err) {
+    console.error('❌ Failed to log to sync_logs:', err.message);
+  }
+}
+
 exports.handler = async () => {
   try {
     const startOfMonth = new Date();
@@ -61,8 +72,15 @@ exports.handler = async () => {
         .upsert(dealRecord, { onConflict: ['hubspot_id'] });
 
       if (!error) upserted++;
-      else console.error(`❌ Failed to upsert deal ${id}:`, error.message);
+      else console.error(`❌ Upsert error on deal ${id}:`, error.message);
     }
+
+    // ✅ log success
+    await logSync({
+      type: 'pull',
+      status: 'success',
+      message: `Synced ${upserted} deals`
+    });
 
     return {
       statusCode: 200,
@@ -72,6 +90,13 @@ exports.handler = async () => {
       })
     };
   } catch (err) {
+    // ❌ log failure
+    await logSync({
+      type: 'pull',
+      status: 'error',
+      message: err.message
+    });
+
     return {
       statusCode: 500,
       body: JSON.stringify({ error: `❌ Sync failed: ${err.message}` })
