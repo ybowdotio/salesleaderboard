@@ -17,37 +17,41 @@ exports.handler = async () => {
   }
 
   try {
-    const response = await axios.get('https://api.hubapi.com/crm/v3/owners', {
-      headers: {
-        Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
-        'Content-Type': 'application/json'
+    const ownersResponse = await axios.get(
+      'https://api.hubapi.com/crm/v3/owners/',
+      {
+        headers: {
+          Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
       }
-    });
+    );
 
-    const reps = response.data.results.map(rep => {
-      const fullName = rep.fullName || '';
-      const [first_name, ...rest] = fullName.split(' ');
-      return {
-        rep_id: rep.id,
-        first_name,
-        last_name: rest.join(' '),
-        full_name: fullName
-      };
-    });
+    const owners = ownersResponse.data.results || [];
 
-    const { error } = await supabase.from('reps').upsert(reps, {
-      onConflict: ['rep_id']
-    });
+    console.info(`📥 Pulled ${owners.length} HubSpot owner(s)`);
+
+    const reps = owners.map(o => ({
+      id: o.id,
+      name: o.fullName || null,
+      email: o.email || null,
+      created_at: new Date().toISOString()
+    }));
+
+    const { error } = await supabase.from('reps').upsert(reps, { onConflict: ['id'] });
 
     if (error) {
-      console.error('❌ Error upserting reps:', error);
+      console.error('❌ Supabase upsert error:', error);
       return { statusCode: 500, body: JSON.stringify(error) };
     }
 
-    console.info(`✅ Synced ${reps.length} reps.`);
-    return { statusCode: 200, body: `Synced ${reps.length} reps.` };
+    console.info(`✅ Synced ${reps.length} reps`);
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ message: `✅ Synced ${reps.length} reps`, sample: reps.slice(0, 2) })
+    };
   } catch (err) {
-    console.error('❌ Unexpected error:', err);
+    console.error('❌ Unexpected error during reps sync:', err);
     return { statusCode: 500, body: err.toString() };
   }
 };
