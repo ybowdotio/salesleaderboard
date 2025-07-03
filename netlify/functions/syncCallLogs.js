@@ -1,6 +1,7 @@
 // netlify/functions/syncCallLogs.js
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
+const { DateTime } = require('luxon');
 
 const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -17,13 +18,12 @@ exports.handler = async () => {
   }
 
   try {
-    const localNow = new Date();
-    const todayISO = localNow.toISOString().split('T')[0];
+    const todayISO = DateTime.now().setZone('America/Chicago').toISODate(); // e.g., "2025-07-02"
 
     const callsResponse = await axios.post(
       'https://api.hubapi.com/crm/v3/objects/calls/search',
       {
-        limit: 100,
+        limit: 50,
         sorts: ['-hs_timestamp'],
         properties: ['hs_timestamp', 'direction', 'hs_call_duration', 'hubspot_owner_id']
       },
@@ -39,9 +39,8 @@ exports.handler = async () => {
     console.info(`📥 Pulled ${calls.length} calls from HubSpot`);
 
     const allCalls = [];
-    for (const call of calls) {
-      if (allCalls.length >= 50) break;
 
+    for (const call of calls) {
       const props = call.properties || {};
       const rawTimestamp = props.hs_timestamp || props.hs_createdate || call.createdAt;
 
@@ -50,16 +49,16 @@ exports.handler = async () => {
         continue;
       }
 
-      const timestamp = new Date(rawTimestamp);
-      const timestampISO = timestamp.toISOString();
-      const timestampDate = timestampISO.split('T')[0];
-      const timestampYear = timestamp.getUTCFullYear();
+      const timestamp = DateTime.fromISO(rawTimestamp, { zone: 'utc' }).setZone('America/Chicago');
+      const timestampISO = timestamp.toISO();
+      const timestampDate = timestamp.toISODate(); // e.g., "2025-07-02"
+      const timestampYear = timestamp.year;
 
       console.log(`🧭 Call ID: ${call.id}`);
       console.log(`   rawTimestamp: ${rawTimestamp}`);
-      console.log(`   parsed ISO:   ${timestampISO}`);
-      console.log(`   date only:    ${timestampDate}`);
-      console.log(`   today ISO:    ${todayISO}`);
+      console.log(`   local ISO:     ${timestampISO}`);
+      console.log(`   date only:     ${timestampDate}`);
+      console.log(`   today ISO:     ${todayISO}`);
 
       if (timestampDate !== todayISO) {
         console.info(`⏩ Skipping call not from today. ID: ${call.id}`);
