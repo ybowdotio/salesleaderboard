@@ -1,140 +1,102 @@
+const fetch = require('node-fetch');
 const { createClient } = require('@supabase/supabase-js');
-const axios = require('axios');
-const dayjs = require('dayjs');
-const utc = require('dayjs/plugin/utc');
-const timezone = require('dayjs/plugin/timezone');
-dayjs.extend(utc);
-dayjs.extend(timezone);
 
-exports.handler = async function () {
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+const hubspotToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY || !HUBSPOT_PRIVATE_APP_TOKEN) {
-    console.error('❌ Missing required env vars');
-    return { statusCode: 500, body: JSON.stringify({ error: 'Missing env vars' }) };
-  }
-
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const todayISO = dayjs().tz('America/Chicago').format('YYYY-MM-DD');
-
-  // STEP 1: Get last cursor from Supabase
-  const { data: cursorData, error: cursorError } = await supabase
-    .from('sync_cursor')
-    .select('cursor')
-    .eq('source', 'hubspot_calls')
-    .single();
-
-  if (cursorError && cursorError.code !== 'PGRST116') {
-    console.error('Error reading sync_cursor:', cursorError);
-    return { statusCode: 500, body: JSON.stringify({ error: 'Error reading cursor' }) };
-  }
-
-  let after = cursorData?.cursor || undefined;
-  let totalInserted = 0;
+exports.handler = async () => {
+  const today = new Date().toISOString().split('T')[0]; // e.g. "2025-07-03"
   const callProperties = [
+    'hs_timestamp',
+    'hubspot_owner_id',
     'hs_call_title',
     'hs_call_duration',
     'hs_call_from_number',
     'hs_call_to_number',
-    'hubspot_owner_id',
-    'hs_timestamp',
     'hs_call_disposition',
     'hs_call_body',
   ];
 
-  try {
-    while (true) {
-      const url = new URL('https://api.hubapi.com/crm/v3/objects/calls');
-      url.searchParams.append('limit', 30);
-      url.searchParams.append('properties', callProperties.join(','));
-      url.searchParams.append('archived', 'false');
-      url.searchParams.append('sort', '-hs_timestamp');
-      if (after) url.searchParams.append('after', after);
+  // 1. Get current cursor
+  const { data: cursorRow, error: cursorError } = await supabase
+    .from('sync_cursor')
+    .select('cursor')
+    .eq('source', 'calls')
+    .single();
 
-      const response = await axios.get(url.toString(), {
-        headers: {
-          Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-      });
+  const cursor = cursorRow?.cursor;
+  const hsUrl = new URL('https://api.hubapi.com/crm/v3/objects/calls');
+  hsUrl.searchParams.set('limit', '100');
+  hsUrl.searchParams.set('properties', callProperties.join(','));
+  hsUrl.searchParams.set('sort', '-hs_timestamp');
+  if (cursor) hsUrl.searchParams.set('after', cursor);
 
-      const results = response.data.results || [];
-      const callsToInsert = results
-        .map((call) => {
-          const p = call.properties || {};
-          if (!p.hs_timestamp) return null;
+  // 2. Fetch 1 page from HubSpot
+  const response = await fetch(hsUrl.href, {
+    headers: {
+      Authorization: `Bearer ${hubspotToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
 
-          const localDate = dayjs(p.hs_timestamp).tz('America/Chicago').format('YYYY-MM-DD');
-          if (localDate !== todayISO) return null;
-
-          return {
-            id: call.id,
-            owner_id: p.hubspot_owner_id,
-            title: p.hs_call_title,
-            duration_seconds: parseInt(p.hs_call_duration || '0', 10),
-            from_number: p.hs_call_from_number,
-            to_number: p.hs_call_to_number,
-            disposition: p.hs_call_disposition,
-            body: p.hs_call_body,
-            timestamp: p.hs_timestamp,
-          };
-        })
-        .filter(Boolean);
-
-      if (callsToInsert.length > 0) {
-        const { error: insertError } = await supabase
-          .from('calls')
-          .upsert(callsToInsert, { onConflict: ['id'] });
-
-        if (insertError) {
-          console.error('❌ Error inserting calls:', insertError);
-          await supabase.from('sync_logs').insert({
-            function_name: 'syncCallLogs',
-            status: 'error',
-            message: insertError.message || JSON.stringify(insertError),
-          });
-          return { statusCode: 500, body: JSON.stringify({ error: insertError.message }) };
-        }
-
-        totalInserted += callsToInsert.length;
-      }
-
-      // Update the cursor in Supabase
-      const nextCursor = response.data?.paging?.next?.after;
-      if (nextCursor) {
-        await supabase
-          .from('sync_cursor')
-          .upsert({ source: 'hubspot_calls', cursor: nextCursor }, { onConflict: ['source'] });
-        after = nextCursor;
-      } else {
-        break;
-      }
-    }
-
-    await supabase.from('sync_logs').insert({
-      function_name: 'syncCallLogs',
-      status: 'success',
-      message: `Inserted ${totalInserted} calls for ${todayISO}.`,
-    });
-
-    console.log(`✅ Inserted ${totalInserted} calls`);
+  if (!response.ok) {
     return {
-      statusCode: 200,
-      body: JSON.stringify({ success: true, inserted: totalInserted }),
-    };
-  } catch (err) {
-    console.error('❌ Unexpected error during call sync:', err);
-    await supabase.from('sync_logs').insert({
-      function_name: 'syncCallLogs',
-      status: 'error',
-      message: err.message || 'Unexpected error',
-    });
-
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: 'Unexpected error', message: err.message }),
+      statusCode: response.status,
+      body: JSON.stringify({ error: await response.text() }),
     };
   }
+
+  const json = await response.json();
+  const calls = json.results || [];
+
+  // 3. Transform and filter for today only
+  const rows = calls
+    .map((c) => {
+      const ts = c.properties.hs_timestamp;
+      return {
+        call_id: c.id,
+        timestamp_iso: ts,
+        rep_id: c.properties.hubspot_owner_id || null,
+        duration_seconds: parseInt(c.properties.hs_call_duration || '0'),
+        from_number: c.properties.hs_call_from_number || null,
+        to_number: c.properties.hs_call_to_number || null,
+        disposition: c.properties.hs_call_disposition || null,
+        body: c.properties.hs_call_body || null,
+      };
+    })
+    .filter((row) => row.timestamp_iso?.startsWith(today));
+
+  // 4. Insert into Supabase
+  const { error: insertError } = await supabase.from('calls').insert(rows);
+  if (insertError) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: insertError.message }),
+    };
+  }
+
+  // 5. Update cursor in Supabase
+  const nextCursor = json.paging?.next?.after || cursor;
+  const { error: updateError } = await supabase
+    .from('sync_cursor')
+    .upsert({ source: 'calls', cursor: nextCursor, updated_at: new Date().toISOString() });
+
+  if (updateError) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: updateError.message }),
+    };
+  }
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      success: true,
+      inserted: rows.length,
+      cursor: nextCursor,
+      complete: !json.paging?.next,
+    }),
+  };
 };
