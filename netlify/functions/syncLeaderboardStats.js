@@ -1,17 +1,15 @@
-// Using CommonJS 'require' syntax for consistency with our other function
-const { createClient } = require('@supabase/supabase-js');
+import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// A simplified handler for a scheduled function
-exports.handler = async () => {
+export const handler = async (event, context) => {
   console.log('📊 Triggering Supabase function to sync leaderboard stats...');
 
   try {
-    // THE FIX: Corrected the function name to match the one in your database
+    // Calling the Supabase function to perform the data aggregation.
     const { error } = await supabase.rpc('sync_today_leaderboard_stats');
 
     if (error) {
@@ -25,7 +23,7 @@ exports.handler = async () => {
     console.log('✅ Supabase function executed successfully.');
     return {
       statusCode: 200,
-      body: JSON.stringify({ success: true }),
+      body: JSON.stringify({ success: true, message: "Leaderboard stats sync complete." }),
     };
   } catch (err) {
     console.error('🔥 Unexpected error in trigger function:', err);
