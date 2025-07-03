@@ -1,25 +1,37 @@
-import { createClient } from '@supabase/supabase-js';
+// Using CommonJS 'require' syntax for consistency with our other function
+const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-export default async function handler(req, res) {
-  console.info('📊 Starting leaderboard sync...');
+// A simplified handler for a scheduled function
+exports.handler = async () => {
+  console.log('📊 Triggering Supabase function to sync leaderboard stats...');
 
   try {
-    const { error } = await supabase.rpc('sync_today_leaderboard');
+    // THE FIX: Corrected the function name to match the one in your database
+    const { error } = await supabase.rpc('sync_today_leaderboard_stats');
 
     if (error) {
-      console.error('❌ Error syncing leaderboard stats:', error);
-      return res.status(500).json({ error: error.message });
+      console.error('❌ Error calling Supabase function:', error);
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: error.message }),
+      };
     }
 
-    console.info('✅ Leaderboard stats synced successfully.');
-    return res.status(200).json({ success: true });
+    console.log('✅ Supabase function executed successfully.');
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ success: true }),
+    };
   } catch (err) {
-    console.error('🔥 Unexpected error:', err);
-    return res.status(500).json({ error: 'Unexpected server error.' });
+    console.error('🔥 Unexpected error in trigger function:', err);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Unexpected server error.' }),
+    };
   }
-}
+};
