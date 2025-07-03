@@ -6,10 +6,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 exports.handler = async () => {
-  const todayISO = new Date().toLocaleDateString('en-CA', {
-    timeZone: 'America/Chicago',
-  }); // e.g. "2025-07-03"
-
+  const todayISO = new Date().toISOString().split('T')[0]; // e.g. "2025-07-03"
   const callProperties = [
     'hs_timestamp',
     'hubspot_owner_id',
@@ -21,19 +18,12 @@ exports.handler = async () => {
     'hs_call_body',
   ];
 
-  // 1. Get current sync cursor
+  // 1. Get current cursor
   const { data: cursorRow, error: cursorError } = await supabase
     .from('sync_cursor')
     .select('cursor')
     .eq('source', 'calls')
     .single();
-
-  if (cursorError) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: 'Failed to load sync cursor', details: cursorError.message }),
-    };
-  }
 
   const cursor = cursorRow?.cursor;
   const hsUrl = new URL('https://api.hubapi.com/crm/v3/objects/calls');
@@ -42,7 +32,7 @@ exports.handler = async () => {
   hsUrl.searchParams.set('sort', '-hs_timestamp');
   if (cursor) hsUrl.searchParams.set('after', cursor);
 
-  // 2. Fetch one page of calls from HubSpot
+  // 2. Fetch 1 page from HubSpot
   const response = await fetch(hsUrl.href, {
     headers: {
       Authorization: `Bearer ${hubspotToken}`,
@@ -60,33 +50,35 @@ exports.handler = async () => {
   const json = await response.json();
   const calls = json.results || [];
 
-  // 3. Transform and filter for today (local timezone)
-  const rows = calls
-    .map((c) => {
-      const ts = c.properties.hs_timestamp;
-      return {
-        call_id: c.id,
-        timestamp_iso: ts,
-        rep_id: c.properties.hubspot_owner_id || null,
-        duration_seconds: parseInt(c.properties.hs_call_duration || '0'),
-        from_number: c.properties.hs_call_from_number || null,
-        to_number: c.properties.hs_call_to_number || null,
-        disposition: c.properties.hs_call_disposition || null,
-        body: c.properties.hs_call_body || null,
-      };
-    })
-    .filter((row) => row.timestamp_iso?.startsWith(todayISO));
+  // Debug: log all hs_timestamp values
+  const rawTimestamps = calls.map(c => c.properties.hs_timestamp);
+  console.log('📅 Raw hs_timestamp values:', rawTimestamps);
+
+  // 3. Transform all rows (disable filtering for now)
+  const rows = calls.map((c) => {
+    const ts = c.properties.hs_timestamp;
+    return {
+      call_id: c.id,
+      timestamp_iso: ts,
+      rep_id: c.properties.hubspot_owner_id || null,
+      duration_seconds: parseInt(c.properties.hs_call_duration || '0'),
+      from_number: c.properties.hs_call_from_number || null,
+      to_number: c.properties.hs_call_to_number || null,
+      disposition: c.properties.hs_call_disposition || null,
+      body: c.properties.hs_call_body || null,
+    };
+  });
 
   // 4. Insert into Supabase
   const { error: insertError } = await supabase.from('calls').insert(rows);
   if (insertError) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Insert failed', details: insertError.message }),
+      body: JSON.stringify({ error: insertError.message }),
     };
   }
 
-  // 5. Update cursor in Supabase
+  // 5. Update cursor
   const nextCursor = json.paging?.next?.after || cursor;
   const { error: updateError } = await supabase
     .from('sync_cursor')
@@ -99,7 +91,7 @@ exports.handler = async () => {
   if (updateError) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Cursor update failed', details: updateError.message }),
+      body: JSON.stringify({ error: updateError.message }),
     };
   }
 
