@@ -1,76 +1,53 @@
+// netlify/functions/syncReps.js
+const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
-const fetch = require('node-fetch');
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 exports.handler = async () => {
-  const startedAt = new Date().toISOString();
-  console.log(`🔄 Sync started at ${startedAt}`);
+  console.info('👥 Starting reps sync...');
+
+  if (!HUBSPOT_PRIVATE_APP_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('❌ Missing environment variables');
+    return { statusCode: 500, body: 'Missing environment variables' };
+  }
 
   try {
-    const res = await fetch('https://api.hubapi.com/crm/v3/owners/', {
+    const response = await axios.get('https://api.hubapi.com/crm/v3/owners', {
       headers: {
-        Authorization: `Bearer ${process.env.HUBSPOT_PRIVATE_APP_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
+        Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
     });
 
-    const data = await res.json();
-    console.log('📦 Raw HubSpot response:', JSON.stringify(data, null, 2));
+    const reps = response.data.results.map(rep => {
+      const fullName = rep.fullName || '';
+      const [first_name, ...rest] = fullName.split(' ');
+      return {
+        rep_id: rep.id,
+        first_name,
+        last_name: rest.join(' '),
+        full_name: fullName
+      };
+    });
 
-    if (!Array.isArray(data.results)) {
-      throw new Error('HubSpot response malformed: owners is not an array');
+    const { error } = await supabase.from('reps').upsert(reps, {
+      onConflict: ['rep_id']
+    });
+
+    if (error) {
+      console.error('❌ Error upserting reps:', error);
+      return { statusCode: 500, body: JSON.stringify(error) };
     }
 
-    const owners = data.results;
-
-    for (const owner of owners) {
-      await supabase.from('reps').upsert({
-        hubspot_owner_id: owner.id,
-        name: `${owner.firstName ?? ''} ${owner.lastName ?? ''}`.trim(),
-        email: owner.email,
-        avatar_url: owner.user?.avatarUrl || null,
-      });
-    }
-
-    console.log(`✅ Finished syncing ${owners.length} reps`);
-
-    await supabase.from('sync_logs').insert([
-      {
-        last_synced_at: startedAt,
-        status: 'OK',
-      },
-    ]);
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        status: 'OK',
-        synced: owners.length,
-        lastSyncedAt: startedAt,
-      }),
-    };
+    console.info(`✅ Synced ${reps.length} reps.`);
+    return { statusCode: 200, body: `Synced ${reps.length} reps.` };
   } catch (err) {
-    console.error('❌ Sync failed:', err.message);
-
-    await supabase.from('sync_logs').insert([
-      {
-        last_synced_at: startedAt,
-        status: 'FAILED',
-        error: err.message,
-      },
-    ]);
-
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        error: 'Sync failed',
-        details: err.message,
-        lastSyncedAt: startedAt,
-      }),
-    };
+    console.error('❌ Unexpected error:', err);
+    return { statusCode: 500, body: err.toString() };
   }
 };
