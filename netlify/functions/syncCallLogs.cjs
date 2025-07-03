@@ -21,7 +21,8 @@ exports.handler = async function () {
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const todayDate = dayjs().tz('America/Chicago').format('YYYY-MM-DD');
+
+  const todayStart = dayjs().tz('America/Chicago').startOf('day').toISOString();
   const callProperties = [
     'hs_call_title',
     'hs_call_duration',
@@ -38,48 +39,53 @@ exports.handler = async function () {
 
   try {
     while (true) {
-      const url = new URL('https://api.hubapi.com/crm/v3/objects/calls');
-      url.searchParams.append('limit', 30);
-      url.searchParams.append('properties', callProperties.join(','));
-      url.searchParams.append('archived', 'false');
-      if (after) {
-        url.searchParams.append('after', after);
-      }
-
-      const response = await axios.get(url.toString(), {
-        headers: {
-          Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
-          'Content-Type': 'application/json',
+      const response = await axios.post(
+        'https://api.hubapi.com/crm/v3/objects/calls/search',
+        {
+          filterGroups: [
+            {
+              filters: [
+                {
+                  propertyName: 'hs_timestamp',
+                  operator: 'GTE',
+                  value: todayStart,
+                },
+              ],
+            },
+          ],
+          sorts: [{ propertyName: 'hs_timestamp', direction: 'ASCENDING' }],
+          properties: callProperties,
+          limit: 30,
+          after: after,
         },
-      });
+        {
+          headers: {
+            Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
       const results = response.data.results || [];
-      const callsToInsert = results
-        .map((call) => {
-          const props = call.properties || {};
-          const timestamp = props.hs_timestamp;
+      const callsToInsert = results.map((call) => {
+        const props = call.properties || {};
+        return {
+          call_id: call.id,
+          owner_id: props.hubspot_owner_id,
+          owner_name: '', // optional to backfill
+          title: props.hs_call_title,
+          duration_seconds: parseInt(props.hs_call_duration || '0', 10),
+          from_number: props.hs_call_from_number,
+          to_number: props.hs_call_to_number,
+          disposition: props.hs_call_disposition,
+          body: props.hs_call_body,
+          timestamp_iso: props.hs_timestamp ? new Date(props.hs_timestamp) : null,
+        };
+      });
 
-          if (!timestamp) return null;
-
-          const localDate = dayjs(timestamp).tz('America/Chicago').format('YYYY-MM-DD');
-          if (localDate !== todayDate) return null;
-
-          return {
-            call_id: call.id,
-            owner_id: props.hubspot_owner_id,
-            title: props.hs_call_title,
-            duration_seconds: parseInt(props.hs_call_duration || '0', 10),
-            from_number: props.hs_call_from_number,
-            to_number: props.hs_call_to_number,
-            disposition: props.hs_call_disposition,
-            body: props.hs_call_body,
-            timestamp: new Date(props.hs_timestamp), // ✅ cast properly
-          };
-        })
-        .filter(Boolean);
-
-      if (callsToInsert.length > 0) {
-        const { error } = await supabase.from('calls').upsert(callsToInsert, {
+      const valid = callsToInsert.filter((c) => c.timestamp_iso);
+      if (valid.length > 0) {
+        const { error } = await supabase.from('calls').upsert(valid, {
           onConflict: ['call_id'],
         });
 
@@ -97,7 +103,7 @@ exports.handler = async function () {
           };
         }
 
-        totalInserted += callsToInsert.length;
+        totalInserted += valid.length;
       }
 
       after = response.data?.paging?.next?.after;
@@ -107,16 +113,16 @@ exports.handler = async function () {
     await supabase.from('sync_logs').insert({
       function_name: 'syncCallLogs',
       status: 'success',
-      message: `Inserted ${totalInserted} calls for ${todayDate}.`,
+      message: `Inserted ${totalInserted} calls for today.`,
     });
 
-    console.log(`✅ Inserted ${totalInserted} calls into Supabase.`);
+    console.log(`✅ Inserted ${totalInserted} calls for today.`);
     return {
       statusCode: 200,
       body: JSON.stringify({ success: true, inserted: totalInserted }),
     };
   } catch (err) {
-    console.error('Unexpected error during call sync:', err);
+    console.error('❌ Unexpected error during call sync:', err);
     await supabase.from('sync_logs').insert({
       function_name: 'syncCallLogs',
       status: 'error',
