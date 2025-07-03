@@ -44,28 +44,31 @@ exports.handler = async function () {
   `;
 
   try {
-    console.log('📤 About to send raw SQL to Supabase...');
-    const { error } = await supabase.rpc('execute_raw_sql', { sql: rawSQL });
+    console.log('📤 Sending raw SQL...');
+    
+    let result;
+    try {
+      result = await supabase.rpc('execute_raw_sql', { sql: rawSQL });
+    } catch (sqlError) {
+      console.error('❌ RPC call threw:', sqlError);
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'Supabase RPC failed', details: sqlError.message }),
+      };
+    }
 
-    if (error) {
-      console.error('Leaderboard stats sync failed:', error);
-
-      await supabase.from('sync_logs').insert({
-        function_name: 'syncLeaderboardStats',
-        status: 'error',
-        message: error.message || JSON.stringify(error),
-      });
-
+    if (result.error) {
+      console.error('⛔ RPC returned error:', result.error);
       return {
         statusCode: 500,
         body: JSON.stringify({
-          error: 'Failed to sync leaderboard stats',
-          details: error.message,
+          error: 'RPC returned error',
+          details: result.error.message,
         }),
       };
     }
 
-    console.log('✅ Leaderboard stats synced for today.');
+    console.log('✅ SQL executed successfully.');
 
     await supabase.from('sync_logs').insert({
       function_name: 'syncLeaderboardStats',
@@ -77,19 +80,13 @@ exports.handler = async function () {
       statusCode: 200,
       body: JSON.stringify({ success: true }),
     };
+
   } catch (err) {
-    console.error('Unexpected error during leaderboard sync:', err);
-
-    await supabase.from('sync_logs').insert({
-      function_name: 'syncLeaderboardStats',
-      status: 'error',
-      message: err.message || 'Unexpected error',
-    });
-
+    console.error('🔥 Unexpected function error:', err);
     return {
       statusCode: 500,
       body: JSON.stringify({
-        error: 'Unexpected server error',
+        error: 'Unexpected error',
         message: err.message,
         stack: err.stack,
       }),
