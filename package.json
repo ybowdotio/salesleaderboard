@@ -11,10 +11,11 @@
   "engines": {
     "node": ">=18.0.0"
   },
-"dependencies": {
-  "@supabase/supabase-js": "^2.39.5",
-  "node-fetch": "^3.3.2",
-  "axios": "^1.6.8",
-  "undici": "^6.6.1"
-}
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.5",
+    "node-fetch": "^3.3.2",
+    "axios": "^1.6.8",
+    "undici": "^6.6.1",
+    "dayjs": "^1.11.10"
+  }
 }
