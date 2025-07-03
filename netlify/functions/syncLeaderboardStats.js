@@ -15,30 +15,75 @@ exports.handler = async function () {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  const testSQL = `select now() as server_time`;
+  const rawSQL = `
+    insert into today_leaderboard_stats (
+      log_date,
+      rep_id,
+      rep_name,
+      total_outbound_calls,
+      total_call_time,
+      avg_call_time
+    )
+    select
+      timezone('America/Chicago', c."timestamp")::date as log_date,
+      c.owner_id as rep_id,
+      r.name as rep_name,
+      count(*) as total_outbound_calls,
+      sum(c.duration_seconds) as total_call_time,
+      avg(c.duration_seconds)::int as avg_call_time
+    from calls c
+    join reps r on c.owner_id = r.id
+    where timezone('America/Chicago', c."timestamp")::date = (current_date at time zone 'America/Chicago')
+    group by log_date, rep_id, rep_name
+    on conflict (log_date, rep_id)
+    do update set
+      rep_name = excluded.rep_name,
+      total_outbound_calls = excluded.total_outbound_calls,
+      total_call_time = excluded.total_call_time,
+      avg_call_time = excluded.avg_call_time;
+  `;
 
   try {
-    const { data, error } = await supabase.rpc('execute_raw_sql', {
-      sql: testSQL,
-    });
+    const { error } = await supabase.rpc('execute_raw_sql', { sql: rawSQL });
 
     if (error) {
-      console.error('Supabase RPC returned error:', error);
+      console.error('⛔ RPC error during leaderboard sync:', error);
+      await supabase.from('sync_logs').insert({
+        function_name: 'syncLeaderboardStats',
+        status: 'error',
+        message: error.message || JSON.stringify(error),
+      });
+
       return {
         statusCode: 500,
-        body: JSON.stringify({ error: error.message }),
+        body: JSON.stringify({
+          error: 'RPC failed',
+          details: error.message,
+        }),
       };
     }
 
+    console.log('✅ Leaderboard stats synced successfully (scheduled run).');
+
+    await supabase.from('sync_logs').insert({
+      function_name: 'syncLeaderboardStats',
+      status: 'success',
+      message: 'Leaderboard stats synced successfully.',
+    });
+
     return {
       statusCode: 200,
-      body: JSON.stringify({
-        success: true,
-        result: data,
-      }),
+      body: JSON.stringify({ success: true }),
     };
   } catch (err) {
-    console.error('Unexpected error:', err);
+    console.error('🔥 Unexpected function error:', err);
+
+    await supabase.from('sync_logs').insert({
+      function_name: 'syncLeaderboardStats',
+      status: 'error',
+      message: err.message || 'Unexpected error',
+    });
+
     return {
       statusCode: 500,
       body: JSON.stringify({
