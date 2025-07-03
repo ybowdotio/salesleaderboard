@@ -33,7 +33,7 @@ exports.handler = async function () {
       avg(c.duration_seconds)::int as avg_call_time
     from calls c
     join reps r on c.owner_id = r.id
-    where timezone('America/Chicago', c."timestamp")::date = (current_date at time zone 'America/Chicago') - interval '1 day'
+    where timezone('America/Chicago', c."timestamp")::date = (current_date at time zone 'America/Chicago')
     group by log_date, rep_id, rep_name
     on conflict (log_date, rep_id)
     do update set
@@ -49,7 +49,6 @@ exports.handler = async function () {
 
     if (error) {
       console.error('Leaderboard stats sync failed:', error);
-
       await supabase.from('sync_logs').insert({
         function_name: 'syncLeaderboardStats',
         status: 'error',
@@ -65,7 +64,7 @@ exports.handler = async function () {
       };
     }
 
-    console.log('✅ Leaderboard stats synced for yesterday.');
+    console.log('✅ Leaderboard stats synced for today.');
 
     await supabase.from('sync_logs').insert({
       function_name: 'syncLeaderboardStats',
