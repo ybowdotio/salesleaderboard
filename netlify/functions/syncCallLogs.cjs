@@ -42,9 +42,7 @@ exports.handler = async function () {
       url.searchParams.append('limit', 30);
       url.searchParams.append('properties', callProperties.join(','));
       url.searchParams.append('archived', 'false');
-      if (after) {
-        url.searchParams.append('after', after);
-      }
+      if (after) url.searchParams.append('after', after);
 
       const response = await axios.get(url.toString(), {
         headers: {
@@ -54,35 +52,28 @@ exports.handler = async function () {
       });
 
       const results = response.data.results || [];
-      const callsToInsert = results
-        .map((call) => {
-          const props = call.properties || {};
-          const timestamp = props.hs_timestamp;
+      console.log(`📦 Page fetched. Records: ${results.length}`);
 
-          if (!timestamp) return null;
-
-          const localDate = dayjs(timestamp).tz('America/Chicago').format('YYYY-MM-DD');
-          if (localDate !== todayDate) return null;
-
-          return {
-            id: call.id,
-            owner_id: props.hubspot_owner_id,
-            title: props.hs_call_title,
-            duration_seconds: parseInt(props.hs_call_duration || '0', 10),
-            from_number: props.hs_call_from_number,
-            to_number: props.hs_call_to_number,
-            disposition: props.hs_call_disposition,
-            body: props.hs_call_body,
-            timestamp: props.hs_timestamp,
-          };
-        })
-        .filter(Boolean);
+      const callsToInsert = results.map((call) => {
+        const props = call.properties || {};
+        return {
+          id: call.id,
+          owner_id: props.hubspot_owner_id,
+          title: props.hs_call_title,
+          duration_seconds: parseInt(props.hs_call_duration || '0', 10),
+          from_number: props.hs_call_from_number,
+          to_number: props.hs_call_to_number,
+          disposition: props.hs_call_disposition,
+          body: props.hs_call_body,
+          timestamp: props.hs_timestamp,
+        };
+      });
 
       if (callsToInsert.length > 0) {
         const { error } = await supabase.from('calls').upsert(callsToInsert, { onConflict: ['id'] });
 
         if (error) {
-          console.error('Error inserting calls:', error);
+          console.error('❌ Error inserting calls:', error);
           await supabase.from('sync_logs').insert({
             function_name: 'syncCallLogs',
             status: 'error',
@@ -108,13 +99,13 @@ exports.handler = async function () {
       message: `Inserted ${totalInserted} calls for ${todayDate}.`,
     });
 
-    console.log(`✅ Inserted ${totalInserted} calls into Supabase.`);
+    console.log(`✅ Inserted ${totalInserted} calls for ${todayDate}`);
     return {
       statusCode: 200,
       body: JSON.stringify({ success: true, inserted: totalInserted }),
     };
   } catch (err) {
-    console.error('Unexpected error during call sync:', err);
+    console.error('❌ Unexpected error during call sync:', err);
     await supabase.from('sync_logs').insert({
       function_name: 'syncCallLogs',
       status: 'error',
