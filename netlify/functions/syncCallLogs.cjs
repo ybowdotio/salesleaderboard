@@ -21,7 +21,6 @@ exports.handler = async function () {
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
   const todayDate = dayjs().tz('America/Chicago').format('YYYY-MM-DD');
 
   const callProperties = [
