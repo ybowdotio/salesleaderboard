@@ -1,4 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
+const { DateTime } = require('luxon');
 
 const hubspotToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -6,7 +7,8 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 exports.handler = async () => {
-  const todayISO = new Date().toISOString().split('T')[0]; // e.g. "2025-07-03"
+  const chicagoToday = DateTime.now().setZone('America/Chicago').toISODate(); // e.g. "2025-07-03"
+
   const callProperties = [
     'hs_timestamp',
     'hubspot_owner_id',
@@ -18,21 +20,21 @@ exports.handler = async () => {
     'hs_call_body',
   ];
 
-  // 1. Get current cursor
+  // 1. Get last cursor
   const { data: cursorRow, error: cursorError } = await supabase
     .from('sync_cursor')
     .select('cursor')
     .eq('source', 'calls')
     .single();
 
-  const cursor = cursorRow?.cursor;
+  const cursor = cursorRow?.cursor || null;
+
+  // 2. Build HubSpot request
   const hsUrl = new URL('https://api.hubapi.com/crm/v3/objects/calls');
   hsUrl.searchParams.set('limit', '100');
   hsUrl.searchParams.set('properties', callProperties.join(','));
-  hsUrl.searchParams.set('sort', '-hs_timestamp');
-  if (cursor) hsUrl.searchParams.set('after', cursor);
+  if (cursor) hsUrl.searchParams.set('after', cursor); // no sort param!
 
-  // 2. Fetch 1 page from HubSpot
   const response = await fetch(hsUrl.href, {
     headers: {
       Authorization: `Bearer ${hubspotToken}`,
@@ -50,26 +52,29 @@ exports.handler = async () => {
   const json = await response.json();
   const calls = json.results || [];
 
-  // Debug: log all hs_timestamp values
-  const rawTimestamps = calls.map(c => c.properties.hs_timestamp);
-  console.log('📅 Raw hs_timestamp values:', rawTimestamps);
+  // 3. Filter for today (Chicago timezone)
+  const rows = calls
+    .map((c) => {
+      const ts = c.properties.hs_timestamp;
+      const localDate = ts
+        ? DateTime.fromISO(ts, { zone: 'utc' }).setZone('America/Chicago').toISODate()
+        : null;
 
-  // 3. Transform all rows (disable filtering for now)
-  const rows = calls.map((c) => {
-    const ts = c.properties.hs_timestamp;
-    return {
-      call_id: c.id,
-      timestamp_iso: ts,
-      rep_id: c.properties.hubspot_owner_id || null,
-      duration_seconds: parseInt(c.properties.hs_call_duration || '0'),
-      from_number: c.properties.hs_call_from_number || null,
-      to_number: c.properties.hs_call_to_number || null,
-      disposition: c.properties.hs_call_disposition || null,
-      body: c.properties.hs_call_body || null,
-    };
-  });
+      return {
+        call_id: c.id,
+        timestamp_iso: ts,
+        rep_id: c.properties.hubspot_owner_id || null,
+        duration_seconds: parseInt(c.properties.hs_call_duration || '0'),
+        from_number: c.properties.hs_call_from_number || null,
+        to_number: c.properties.hs_call_to_number || null,
+        disposition: c.properties.hs_call_disposition || null,
+        body: c.properties.hs_call_body || null,
+        call_date: localDate,
+      };
+    })
+    .filter((row) => row.call_date === chicagoToday);
 
-  // 4. Insert into Supabase
+  // 4. Insert new calls
   const { error: insertError } = await supabase.from('calls').insert(rows);
   if (insertError) {
     return {
@@ -85,7 +90,6 @@ exports.handler = async () => {
     .upsert({
       source: 'calls',
       cursor: nextCursor,
-      updated_at: new Date().toISOString(),
     });
 
   if (updateError) {
