@@ -8,47 +8,56 @@
   <!-- Tailwind CSS for modern styling -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- Google Fonts for a cleaner look -->
+  <!-- Google Fonts - Using a font that closely matches HubSpot's UI -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
   
   <style>
-    /* Custom styles to complement Tailwind */
+    /* Custom styles inspired by the HubSpot aesthetic */
     body {
-      font-family: 'Inter', sans-serif;
-      background-color: #f8fafc; /* A lighter gray background */
+      font-family: 'Roboto', "Helvetica Neue", Helvetica, Arial, sans-serif;
+      background-color: #F5F8FA; /* HubSpot's primary background color */
+      color: #33475B; /* HubSpot's primary text color */
     }
 
-    /* Custom animation for the progress bars */
     .bar-animate {
       transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
     }
     
-    /* Glowing effect for exceeded goals */
-    .bar-glow {
-      box-shadow: 0 0 12px 2px var(--glow-color, #f59e0b);
+    .runner-animate {
+      transition: left 1.5s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
-    /* Animation for the runner icon */
-    .runner-animate {
-        transition: left 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Keyframe animation for the pulsing effect when a goal is met */
+    @keyframes pulse-animation {
+      0%, 100% {
+        transform: scaleX(1);
+      }
+      50% {
+        transform: scaleX(1.01);
+      }
+    }
+
+    .goal-met-pulse {
+      animation: pulse-animation 2s infinite;
+      transform-origin: left; /* Ensures the bar pulses from left to right */
     }
   </style>
 </head>
-<body class="text-gray-800 p-4 sm:p-6 lg:p-8">
+<body class="p-4 sm:p-6 lg:p-8">
 
   <div class="max-w-7xl mx-auto">
     <!-- Header Section -->
-    <header class="flex justify-between items-center mb-6">
-      <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Goldmine Sales Leaderboard</h1>
-      <a href="goalsSettings.html" target="_blank" class="px-4 py-2 bg-amber-500 text-white font-semibold rounded-lg shadow-md hover:bg-amber-600 transition-colors duration-300">
+    <header class="flex justify-between items-center mb-8">
+      <h1 class="text-2xl sm:text-3xl font-bold text-[#0E1E2D]">Goldmine Sales Leaderboard</h1>
+      <a href="goalsSettings.html" target="_blank" class="px-4 py-2 bg-[#FF7A59] text-white font-bold rounded-sm shadow-sm hover:bg-[#E86143] transition-colors duration-300 text-sm">
         Goal Settings
       </a>
     </header>
 
     <!-- Column Headers -->
-    <div class="hidden md:grid grid-cols-5 gap-4 px-6 py-3 text-left text-sm font-semibold text-gray-500 uppercase tracking-wider">
+    <div class="hidden md:grid grid-cols-5 gap-6 px-6 py-3 text-left text-xs font-bold text-[#7C98B6] uppercase tracking-wider">
       <div>Sales Rep</div>
       <div class="text-center">Total Calls</div>
       <div class="text-center">Avg Call Time</div>
@@ -57,9 +66,9 @@
     </div>
 
     <!-- Leaderboard Container -->
-    <div id="leaderboard-container" class="space-y-3">
+    <div id="leaderboard-container" class="space-y-4">
       <!-- Loading State -->
-      <div id="loading-state" class="text-center py-10">
+      <div id="loading-state" class="text-center py-12">
         <p class="text-gray-500">Loading leaderboard data...</p>
       </div>
       <!-- Leaderboard rows will be inserted here by JavaScript -->
@@ -67,7 +76,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- We need dayjs for correct timezone handling -->
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/utc.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/timezone.js"></script>
@@ -97,32 +105,41 @@
       return `${pad(minutes)}:${pad(seconds)}`;
     }
     
-    function renderMetric(label, value, goal, colorClass = 'bg-gray-500') {
+    function renderMetric(label, value, goal, colorClass = 'bg-gray-400') {
       const percentage = goal > 0 ? Math.min((value / goal) * 100, 100) : 0;
-      const overGoal = goal > 0 && value > goal;
-      const glowColor = overGoal ? '#f59e0b' : '#10b981';
-
+      const goalMet = goal > 0 && value >= goal;
+      
       return `
-        <div class="relative h-8 bg-gray-200 rounded-full overflow-hidden">
-          <div 
-            class="absolute top-0 left-0 h-full ${colorClass} rounded-full bar-animate ${overGoal ? 'bar-glow' : ''}" 
-            style="width: ${percentage}%; --glow-color: ${glowColor};"
-          ></div>
-          <div class="absolute inset-0 flex items-center justify-center">
-            <span class="font-semibold text-white text-sm mix-blend-difference">${label}</span>
-          </div>
+        <div class="relative h-6 bg-[#EAF0F6] rounded-sm mt-6">
+          <!-- Runner Icon -->
           ${percentage > 0 ? `
-            <div class="absolute bottom-full h-8 w-8 runner-animate" style="left: ${percentage}%; transform: translateX(-30%); margin-bottom: 0.125rem;">
+            <div class="absolute bottom-full h-7 w-7 runner-animate" style="left: ${percentage}%; transform: translateX(-30%); margin-bottom: -2px;">
               <img src="obstacles.gif" alt="Runner" class="h-full w-full">
             </div>
           ` : ''}
+          
+          <!-- Dark text label (sits on the gray background) -->
+          <div class="absolute inset-0 flex items-center justify-center">
+            <span class="font-bold text-xs text-gray-600">${label}</span>
+          </div>
+
+          <!-- Colored progress bar -->
+          <div 
+            class="absolute top-0 left-0 h-full ${colorClass} rounded-sm bar-animate overflow-hidden ${goalMet ? 'goal-met-pulse' : ''}" 
+            style="width: ${percentage}%;"
+          >
+            <!-- White text label (sits inside the colored bar and is revealed as it grows) -->
+            <div class="absolute inset-0 flex items-center justify-center">
+              <span class="font-bold text-xs text-white">${label}</span>
+            </div>
+          </div>
         </div>
       `;
     }
 
     function renderRepRow(repData, goals) {
       const repRow = document.createElement('div');
-      repRow.className = 'grid md:grid-cols-5 gap-4 items-center bg-white p-4 rounded-xl shadow-sm border border-gray-200';
+      repRow.className = 'grid md:grid-cols-5 gap-y-2 md:gap-x-6 items-center bg-white p-4 rounded-md shadow-sm border border-[#CBD6E2]';
 
       const repName = repData.rep_name || 'Unknown Rep';
       const totalCalls = repData.total_outbound_calls || 0;
@@ -131,21 +148,22 @@
       const mtdSales = repData.sales_total || 0;
 
       repRow.innerHTML = `
-        <div class="font-bold text-lg text-gray-900">${repName}</div>
+        <div class="font-bold text-base text-[#33475B]">${repName}</div>
+        
         <div class="md:text-center">
-          <span class="md:hidden font-semibold text-gray-500">Total Calls: </span>
+          <span class="md:hidden text-xs font-bold text-[#7C98B6] uppercase">Total Calls: </span>
           ${renderMetric(totalCalls.toLocaleString(), totalCalls, goals.calls, 'bg-blue-500')}
         </div>
         <div class="md:text-center">
-          <span class="md:hidden font-semibold text-gray-500">Avg Call Time: </span>
+          <span class="md:hidden text-xs font-bold text-[#7C98B6] uppercase">Avg Call Time: </span>
           ${renderMetric(formatTime(avgCallTime), avgCallTime, goals.avg_call_time, 'bg-green-500')}
         </div>
         <div class="md:text-center">
-          <span class="md:hidden font-semibold text-gray-500">Total Call Time: </span>
+          <span class="md:hidden text-xs font-bold text-[#7C98B6] uppercase">Total Call Time: </span>
           ${renderMetric(formatTime(totalCallTime), totalCallTime, goals.total_call_time, 'bg-indigo-500')}
         </div>
         <div class="md:text-center">
-          <span class="md:hidden font-semibold text-gray-500">MTD Sales: </span>
+          <span class="md:hidden text-xs font-bold text-[#7C98B6] uppercase">MTD Sales: </span>
           ${renderMetric(`$${mtdSales.toLocaleString()}`, mtdSales, goals.sales, 'bg-amber-500')}
         </div>
       `;
@@ -155,13 +173,12 @@
     // --- MAIN FUNCTION ---
     async function loadLeaderboard() {
       try {
-        // THE FIX: Calculate today's date using the correct timezone to match the database.
         const todayInChicago = dayjs().tz('America/Chicago').format('YYYY-MM-DD');
 
         const { data: stats, error: statsError } = await supabase
           .from('today_leaderboard_stats')
           .select('*')
-          .eq('log_date', todayInChicago) // Query for the correct date
+          .eq('log_date', todayInChicago)
           .order('total_outbound_calls', { ascending: false });
 
         if (statsError) throw statsError;
@@ -176,7 +193,7 @@
         leaderboardContainer.innerHTML = '';
 
         if (!stats || stats.length === 0) {
-          leaderboardContainer.innerHTML = '<p class="text-center py-10 text-gray-500">No call data yet for today.</p>';
+          leaderboardContainer.innerHTML = '<p class="text-center py-12 text-gray-500">No call data yet for today.</p>';
           return;
         }
 
@@ -184,7 +201,7 @@
 
       } catch (error) {
         console.error('Error loading leaderboard:', error);
-        leaderboardContainer.innerHTML = `<p class="text-center py-10 text-red-500 font-semibold">Failed to load leaderboard data. Error: ${error.message}</p>`;
+        leaderboardContainer.innerHTML = `<p class="text-center py-12 text-red-600 font-semibold">Failed to load leaderboard data. Error: ${error.message}</p>`;
       }
     }
 
