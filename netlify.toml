@@ -8,3 +8,7 @@
 
 [functions."syncDealsFinal"]
   schedule = "@hourly"
+
+[functions."syncLeaderboardStats"]
+  # ⏰ Runs every 5 minutes from 6:00 AM to 9:00 PM Chicago time (UTC 11–3)
+  schedule = "*/5 11-3 * * *"
