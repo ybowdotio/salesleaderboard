@@ -16,12 +16,12 @@ exports.handler = async function () {
     let after = undefined;
     let more = true;
 
-    // Fetch up to 30 calls from HubSpot
     while (more && calls.length < 30) {
       const url = new URL('https://api.hubapi.com/crm/v3/objects/calls');
       url.searchParams.set('limit', '30');
       url.searchParams.set('properties', [
         'hs_timestamp',
+        'hs_createdate',
         'hubspot_owner_id',
         'hs_call_title',
         'hs_call_body',
@@ -55,18 +55,20 @@ exports.handler = async function () {
       }
     }
 
-    const callsToday = calls.filter(c =>
-      c.properties?.hs_timestamp?.startsWith(todayISO)
-    );
+    const callsToday = calls.filter(c => {
+      const props = c.properties || {};
+      const date = props.hs_timestamp || props.hs_createdate;
+      return date && date.startsWith(todayISO);
+    });
 
     console.info(`Fetched ${calls.length} calls, ${callsToday.length} match today's date.`);
 
     for (const call of callsToday) {
       const props = call.properties;
 
-      const { data, error } = await supabase.from('calls').upsert({
+      const { error } = await supabase.from('calls').upsert({
         call_id: call.id,
-        timestamp_iso: props.hs_timestamp,
+        timestamp_iso: props.hs_timestamp || props.hs_createdate,
         owner_id: props.hubspot_owner_id,
         title: props.hs_call_title,
         body: props.hs_call_body,
