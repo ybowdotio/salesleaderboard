@@ -29,14 +29,16 @@ exports.handler = async () => {
 
     const owners = ownersResponse.data.results || [];
 
-    console.info(`📥 Pulled ${owners.length} HubSpot owner(s)`);
+    const reps = owners
+      .filter(o => o.fullName) // ✅ Skip owners with null names
+      .map(o => ({
+        id: o.id,
+        name: o.fullName,
+        email: o.email || null,
+        created_at: new Date().toISOString()
+      }));
 
-    const reps = owners.map(o => ({
-      id: o.id,
-      name: o.fullName || null,
-      email: o.email || null,
-      created_at: new Date().toISOString()
-    }));
+    console.info(`📥 Prepared ${reps.length} reps to upsert`);
 
     const { error } = await supabase.from('reps').upsert(reps, { onConflict: ['id'] });
 
