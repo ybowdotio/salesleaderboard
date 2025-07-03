@@ -1,4 +1,4 @@
-// netlify/functions/syncLeaderboardStats.js
+const fetch = require('node-fetch');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(
@@ -7,98 +7,65 @@ const supabase = createClient(
 );
 
 exports.handler = async () => {
-  console.info('📊 Starting syncLeaderboardStats...');
-
   try {
-    // ⏱️ Chicago time offset (UTC-5/6 depending on DST)
-    const now = new Date();
-    const offsetDate = new Date(now);
-    offsetDate.setDate(now.getDate() - 1); // 🔁 Use "yesterday" for now
-    const chicagoDate = offsetDate.toLocaleDateString('en-CA', {
-      timeZone: 'America/Chicago'
-    }); // YYYY-MM-DD
+    // Get yesterday's date in ISO format (local time)
+    const yesterday = new Date(Date.now() - 86400000);
+    const log_date = yesterday.toISOString().slice(0, 10);
 
-    console.info(`🗓️ Using log_date: ${chicagoDate}`);
+    console.info(`📊 Using log_date: ${log_date}`);
 
-    // 📤 Fetch reps from Supabase
-    const { data: reps, error: repsError } = await supabase
-      .from('reps')
-      .select('id, name');
+    // SQL to get daily stats with rep names, ignoring calls with null owner_id
+    const sql = `
+      SELECT
+        c.owner_id AS rep_id,
+        COALESCE(r.name, 'Unknown Rep') AS rep_name,
+        COUNT(*) AS total_calls,
+        AVG(c.duration_seconds)::int AS avg_call_time,
+        SUM(c.duration_seconds)::int AS total_call_time,
+        c.timestamp_date AS log_date
+      FROM calls c
+      LEFT JOIN reps r ON c.owner_id = r.id
+      WHERE c.timestamp_date = $1
+        AND c.owner_id IS NOT NULL
+      GROUP BY c.owner_id, r.name, c.timestamp_date
+      ORDER BY total_calls DESC;
+    `;
 
-    if (repsError) {
-      console.error('❌ Failed to fetch reps:', repsError);
-      return { statusCode: 500, body: 'Failed to fetch reps' };
+    const { data, error } = await supabase.rpc('execute_sql', {
+      query_text: sql,
+      params: [log_date]
+    });
+
+    if (error) {
+      console.error('❌ Error running SQL:', error);
+      return { statusCode: 500, body: JSON.stringify(error) };
     }
 
-    const repMap = {};
-    reps.forEach((r) => (repMap[r.id] = r.name));
-    console.info(`👥 Loaded ${reps.length} reps`);
+    console.info(`🛠️ Preparing ${data.length} leaderboard rows`);
 
-    // 📞 Aggregate call data
-    const { data: calls, error: callsError } = await supabase
-      .from('calls')
-      .select('owner_id, duration_seconds')
-      .eq('timestamp_date', chicagoDate);
+    // Upsert into today_leaderboard_stats
+    const leaderboardRows = data.map(row => ({
+      log_date: row.log_date,
+      rep_id: row.rep_id,
+      rep_name: row.rep_name,
+      total_outbound_calls: row.total_calls,
+      avg_call_time: row.avg_call_time,
+      total_call_time: row.total_call_time,
+    }));
 
-    if (callsError) {
-      console.error('❌ Failed to fetch call logs:', callsError);
-      return { statusCode: 500, body: 'Failed to fetch call logs' };
-    }
-
-    console.info(`📞 Processing ${calls.length} calls`);
-
-    // 🧮 Group by rep_id
-    const leaderboard = {};
-    for (const call of calls) {
-      const repId = call.owner_id;
-      if (!repId) continue;
-
-      if (!leaderboard[repId]) {
-        leaderboard[repId] = {
-          rep_id: repId,
-          rep_name: repMap[repId] || 'Unknown Rep',
-          total_outbound_calls: 0,
-          total_call_time: 0,
-          avg_call_time: 0,
-          log_date: chicagoDate
-        };
-      }
-
-      leaderboard[repId].total_outbound_calls += 1;
-      leaderboard[repId].total_call_time += call.duration_seconds || 0;
-    }
-
-    // 🧠 Compute average
-    for (const stat of Object.values(leaderboard)) {
-      stat.avg_call_time = stat.total_outbound_calls
-        ? Math.round(stat.total_call_time / stat.total_outbound_calls)
-        : 0;
-    }
-
-    const leaderboardRows = Object.values(leaderboard);
-    console.info(`📊 Prepared ${leaderboardRows.length} leaderboard rows`);
-
-    // 🪄 Upsert into today_leaderboard_stats
     const { error: upsertError } = await supabase
       .from('today_leaderboard_stats')
-      .upsert(leaderboardRows, {
-        onConflict: ['rep_id', 'log_date']
-      });
+      .upsert(leaderboardRows, { onConflict: ['log_date', 'rep_id'] });
 
     if (upsertError) {
       console.error('❌ Upsert error:', upsertError);
-      return { statusCode: 500, body: 'Upsert failed' };
+      return { statusCode: 500, body: JSON.stringify(upsertError) };
     }
 
-    console.info('✅ Leaderboard sync complete');
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: `Synced ${leaderboardRows.length} leaderboard rows for ${chicagoDate}`
-      })
-    };
+    console.info('✅ Leaderboard sync complete.');
+    return { statusCode: 200, body: `Synced ${leaderboardRows.length} leaderboard rows for ${log_date}` };
   } catch (err) {
     console.error('❌ Unexpected error:', err);
-    return { statusCode: 500, body: 'Internal server error' };
+    return { statusCode: 500, body: err.toString() };
   }
 };
