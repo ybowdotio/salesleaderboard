@@ -1,6 +1,7 @@
 // netlify/functions/syncCallLogs.js
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
+const { DateTime } = require('luxon');
 
 const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -17,7 +18,7 @@ exports.handler = async () => {
   }
 
   try {
-    const todayISO = new Date().toISOString().split('T')[0];
+    const todayISO = DateTime.now().setZone('America/Chicago').toISODate();
 
     const callsResponse = await axios.post(
       'https://api.hubapi.com/crm/v3/objects/calls/search',
@@ -50,7 +51,7 @@ exports.handler = async () => {
 
       const timestamp = new Date(rawTimestamp);
       const timestampISO = timestamp.toISOString();
-      const timestampDate = timestampISO.split('T')[0];
+      const timestampDate = DateTime.fromJSDate(timestamp).setZone('America/Chicago').toISODate();
       const timestampYear = timestamp.getUTCFullYear();
 
       console.log(`🧭 Call ID: ${call.id}`);
