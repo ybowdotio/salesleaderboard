@@ -4,307 +4,212 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Goldmine Sales Leaderboard</title>
+  
+  <!-- Tailwind CSS for modern styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts for a cleaner look -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
   <style>
-    * {
-      box-sizing: border-box;
-    }
-
+    /* Custom styles to complement Tailwind */
     body {
-      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-      background: #f5f8fa;
-      margin: 0;
-      padding: 2rem;
-      color: #33475b;
+      font-family: 'Inter', sans-serif;
+      background-color: #f8fafc; /* A lighter gray background */
     }
 
-    h1 {
-      font-size: 1.75rem;
-      color: #213343;
+    /* Custom animation for the progress bars */
+    .bar-animate {
+      transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    /* Glowing effect for exceeded goals */
+    .bar-glow {
+      box-shadow: 0 0 12px 2px var(--glow-color, #f59e0b);
     }
 
-    .leaderboard {
-      max-width: 1100px;
-      margin: auto;
-      background: #ffffff;
-      border: 1px solid #dfe3e8;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-    }
-
-    .rep-row {
-      display: flex;
-      flex-direction: column;
-      border-bottom: 1px solid #f0f1f3;
-      padding: 1.25rem;
-      transition: background 0.3s ease;
-    }
-
-    .rep-row:hover {
-      background-color: #f9fafb;
-    }
-
-    .rep-name {
-      font-weight: 600;
-      margin-bottom: 0.75rem;
-      font-size: 1rem;
-    }
-
-    .metrics {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 1rem;
-    }
-
-    .metric {
-      position: relative;
-      background: #ebeff3;
-      border-radius: 6px;
-      height: 36px;
-      overflow: visible;
-    }
-
-    .bar {
-      background: #ff7a59;
-      height: 100%;
-      width: 0;
-      max-width: 100%;
-      position: absolute;
-      top: 0;
-      left: 0;
-      transition: width 1.5s ease-in-out;
-      border-radius: 6px;
-      z-index: 1;
-    }
-
-    .bar.over::after {
-      content: "";
-      position: absolute;
-      top: 0;
-      right: 0;
-      width: 8px;
-      height: 100%;
-      background: rgba(255, 122, 89, 0.9);
-      box-shadow: 0 0 10px rgba(255, 122, 89, 0.8);
-      animation: pulse-glow 1.5s infinite;
-    }
-
-    @keyframes pulse-glow {
-      0%, 100% {
-        opacity: 0.6;
-        transform: scaleY(1);
-      }
-      50% {
-        opacity: 1;
-        transform: scaleY(1.1);
-      }
-    }
-
-    .runner {
-      position: absolute;
-      bottom: 100%;
-      transform: translate(-50%, -12px);
-      width: 28px;
-      height: 28px;
-      z-index: 2;
-    }
-
-    .runner img {
-      width: 100%;
-      height: auto;
-    }
-
-    .badge-icon {
-      position: absolute;
-      top: -8px;
-      left: -8px;
-      width: 20px;
-      height: 20px;
-      background-color: #2ecc71;
-      border-radius: 50%;
-      font-size: 0.7rem;
-      color: #fff;
-      font-weight: bold;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 3;
-      box-shadow: 0 0 5px rgba(46, 204, 113, 0.6);
-    }
-
-    .sale-star {
-      position: absolute;
-      top: -12px;
-      right: -10px;
-      font-size: 16px;
-      color: gold;
-      z-index: 4;
-    }
-
-    .label {
-      position: absolute;
-      right: 8px;
-      top: 50%;
-      transform: translateY(-50%);
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: #33475b;
-      z-index: 1;
-    }
-
-    .goal-badge {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      font-size: 0.9rem;
-      font-weight: 600;
-      color: #fff;
-      border-radius: 6px;
-    }
-
-    .goal-complete {
-      background-color: #2ecc71;
-    }
-
-    .goal-partial {
-      background-color: #f39c12;
-    }
-
-    .goal-none {
-      background-color: #e74c3c;
-    }
-
-    .header-row {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      font-size: 0.9rem;
-      font-weight: 600;
-      color: #7c98b6;
-      padding: 1rem 1.25rem 0.5rem;
-      max-width: 1100px;
-      margin: auto;
-    }
-
-    @media (max-width: 768px) {
-      .metrics,
-      .header-row {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .header-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      max-width: 1100px;
-      margin: 0 auto 2rem;
-    }
-
-    .goal-link {
-      background-color: #FF7A59;
-      color: white;
-      padding: 0.5rem 1rem;
-      border-radius: 4px;
-      text-decoration: none;
-      font-size: 0.9rem;
+    /* Animation for the runner icon */
+    .runner-animate {
+        transition: left 1.5s cubic-bezier(0.4, 0, 0.2, 1);
     }
   </style>
 </head>
-<body>
-  <div class="header-bar">
-    <h1 style="margin: 0;">Goldmine Sales Leaderboard</h1>
-    <a href="goalsSettings.html" target="_blank" class="goal-link">Goal Settings</a>
-  </div>
+<body class="text-gray-800 p-4 sm:p-6 lg:p-8">
 
-  <div class="header-row">
-    <div>Total Calls</div>
-    <div>Avg Call Time</div>
-    <div>Total Call Time</div>
-    <div>Month To Date Sales</div>
-    <div>Daily Goal</div>
+  <div class="max-w-7xl mx-auto">
+    <!-- Header Section -->
+    <header class="flex justify-between items-center mb-6">
+      <h1 class="text-2xl sm:text-3xl font-bold text-gray-900">Goldmine Sales Leaderboard</h1>
+      <a href="goalsSettings.html" target="_blank" class="px-4 py-2 bg-amber-500 text-white font-semibold rounded-lg shadow-md hover:bg-amber-600 transition-colors duration-300">
+        Goal Settings
+      </a>
+    </header>
+
+    <!-- Column Headers -->
+    <div class="hidden md:grid grid-cols-5 gap-4 px-6 py-3 text-left text-sm font-semibold text-gray-500 uppercase tracking-wider">
+      <div>Sales Rep</div>
+      <div class="text-center">Total Calls</div>
+      <div class="text-center">Avg Call Time</div>
+      <div class="text-center">Total Call Time</div>
+      <div class="text-center">Month To Date Sales</div>
+    </div>
+
+    <!-- Leaderboard Container -->
+    <div id="leaderboard-container" class="space-y-3">
+      <!-- Loading State -->
+      <div id="loading-state" class="text-center py-10">
+        <p class="text-gray-500">Loading leaderboard data...</p>
+      </div>
+      <!-- Leaderboard rows will be inserted here by JavaScript -->
+    </div>
   </div>
-  <div class="leaderboard" id="leaderboard"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-  const supabase = window.supabase.createClient(
-    'https://vmifmysnxolecfpidttr.supabase.co',  // 🔁 change this
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtaWZteXNueG9sZWNmcGlkdHRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEzODQ4NzksImV4cCI6MjA2Njk2MDg3OX0.3h-lHze2gA0y2Y3CCjPmAzyzI7Fe_FL3HCP0Tr4uMrU'                    // 🔁 change this
-  );
+  <script>
+    // --- CONFIGURATION ---
+    const SUPABASE_URL = 'https://vmifmysnxolecfpidttr.supabase.co'; 
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtaWZteXNueG9sZWNmcGlkdHRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEzODQ4NzksImV4cCI6MjA2Njk2MDg3OX0.3h-lHze2gA0y2Y3CCjPmAzyzI7Fe_FL3HCP0Tr4uMrU';
 
-  const leaderboard = document.getElementById('leaderboard');
+    // --- INITIALIZATION ---
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const leaderboardContainer = document.getElementById('leaderboard-container');
+    const loadingState = document.getElementById('loading-state');
 
-  function renderRep(rep) {
-    const repRow = document.createElement('div');
-    repRow.className = 'rep-row';
+    // --- HELPER FUNCTIONS ---
 
-    const over = value => value > 100 ? ' over' : '';
-    const goalClass = 'goal-none';
+    /**
+     * Formats seconds into a more readable MM:SS or HH:MM:SS format.
+     * @param {number} totalSeconds - The total seconds to format.
+     * @returns {string} The formatted time string.
+     */
+    function formatTime(totalSeconds) {
+      if (isNaN(totalSeconds) || totalSeconds < 0) return '00:00';
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = Math.floor(totalSeconds % 60);
+      
+      const pad = (num) => num.toString().padStart(2, '0');
 
-    const calls = rep.total_outbound_calls;
-    const avgSeconds = rep.avg_call_time || 0;
-    const totalSeconds = rep.total_call_time || 0;
+      if (hours > 0) {
+        return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+      }
+      return `${pad(minutes)}:${pad(seconds)}`;
+    }
+    
+    /**
+     * Renders a single progress bar metric.
+     * @param {string} label - The text label to display (e.g., the raw number).
+     * @param {number} value - The current value of the metric.
+     * @param {number} goal - The goal for this metric.
+     * @returns {string} The HTML for the metric cell.
+     */
+    function renderMetric(label, value, goal) {
+      const percentage = goal > 0 ? Math.min((value / goal) * 100, 100) : 0;
+      const overGoal = goal > 0 && value > goal;
+      const glowColor = overGoal ? '#f59e0b' : '#10b981'; // Amber for calls/time, Green for sales
 
-    const avgTime = new Date(avgSeconds * 1000).toISOString().substr(14, 5);
-    const totalTime = new Date(totalSeconds * 1000).toISOString().substr(11, 8);
-
-    const percent = {
-      calls: Math.min(calls, 100),
-      avgTime: 60 + Math.random() * 40,
-      totalTime: Math.min(totalSeconds / 60, 100),
-      sales: Math.floor(Math.random() * 100 + 1)
-    };
-
-    repRow.innerHTML = `
-      <div class="rep-name">${rep.rep_name}</div>
-      <div class="metrics">
-        ${['calls', 'avgTime', 'totalTime', 'sales'].map(key => {
-          const value = percent[key];
-          const label =
-            key === 'calls' ? calls :
-            key === 'avgTime' ? avgTime :
-            key === 'totalTime' ? totalTime :
-            `$${(rep.sales_total || 0).toLocaleString()}`;
-
-          return `
-            <div class="metric">
-              <div class="bar${over(value)}" style="width: ${Math.min(value, 100)}%"></div>
-              <div class="runner" style="left: ${Math.min(value, 100)}%">
-                <img src="obstacles.gif" alt="Runner">
-              </div>
-              <div class="label">${label}</div>
+      return `
+        <div class="relative h-8 bg-gray-200 rounded-full overflow-hidden">
+          <div 
+            class="absolute top-0 left-0 h-full bg-green-500 rounded-full bar-animate ${overGoal ? 'bar-glow' : ''}" 
+            style="width: ${percentage}%; --glow-color: ${glowColor};"
+          ></div>
+          <div class="absolute inset-0 flex items-center justify-center">
+            <span class="font-semibold text-gray-800 text-sm">${label}</span>
+          </div>
+          ${overGoal ? `
+            <div class="absolute top-0 right-0 h-full w-8 runner-animate" style="left: calc(${percentage}% - 1rem);">
+              <img src="obstacles.gif" alt="Runner" class="h-8 w-8 -mt-2">
             </div>
-          `;
-        }).join('')}
-        <div class="goal-badge ${goalClass}">—</div>
-      </div>
-    `;
-
-    leaderboard.appendChild(repRow);
-  }
-
-  async function loadLeaderboard() {
-    const today = new Date().toISOString().split('T')[0];
-
-    const { data, error } = await supabase
-      .from('today_leaderboard_stats')
-      .select('*')
-      .eq('log_date', today)
-      .order('total_outbound_calls', { ascending: false });
-
-    if (error) {
-      leaderboard.innerHTML = '<p style="color:red">Failed to load leaderboard.</p>';
-      console.error(error);
-      return;
+          ` : ''}
+        </div>
+      `;
     }
 
-    if (data.length === 0) {
-      leaderboard.innerHTML = '<p>No call data yet for today.</p>';
-      return;
+    /**
+     * Creates and appends a row for a single sales rep to the leaderboard.
+     * @param {object} repData - The data for the sales rep from the database.
+     * @param {object} goals - The mapped goal data for all metrics.
+     */
+    function renderRepRow(repData, goals) {
+      const repRow = document.createElement('div');
+      repRow.className = 'grid md:grid-cols-5 gap-4 items-center bg-white p-4 rounded-xl shadow-sm border border-gray-200';
+
+      const repName = repData.rep_name || 'Unknown Rep';
+      const totalCalls = repData.total_outbound_calls || 0;
+      const avgCallTime = repData.avg_call_time || 0;
+      const totalCallTime = repData.total_call_time || 0;
+      const mtdSales = repData.sales_total || 0;
+
+      repRow.innerHTML = `
+        <!-- Rep Name (visible on all screen sizes) -->
+        <div class="font-bold text-lg text-gray-900">${repName}</div>
+        
+        <!-- Metrics -->
+        <div class="md:text-center">
+          <span class="md:hidden font-semibold text-gray-500">Total Calls: </span>
+          ${renderMetric(totalCalls.toLocaleString(), totalCalls, goals.calls)}
+        </div>
+        <div class="md:text-center">
+          <span class="md:hidden font-semibold text-gray-500">Avg Call Time: </span>
+          ${renderMetric(formatTime(avgCallTime), avgCallTime, goals.avg_call_time)}
+        </div>
+        <div class="md:text-center">
+          <span class="md:hidden font-semibold text-gray-500">Total Call Time: </span>
+          ${renderMetric(formatTime(totalCallTime), totalCallTime, goals.total_call_time)}
+        </div>
+        <div class="md:text-center">
+          <span class="md:hidden font-semibold text-gray-500">MTD Sales: </span>
+          ${renderMetric(`$${mtdSales.toLocaleString()}`, mtdSales, goals.sales)}
+        </div>
+      `;
+      leaderboardContainer.appendChild(repRow);
     }
 
-    data.forEach(renderRep);
-  }
+    // --- MAIN FUNCTION ---
+    async function loadLeaderboard() {
+      try {
+        // Fetch goals and stats data in parallel for efficiency
+        const [goalsResponse, statsResponse] = await Promise.all([
+          supabase.from('daily_goals').select('*').single(), // CORRECTED: Fetches from 'daily_goals'
+          supabase.from('today_leaderboard_stats').select('*').order('total_outbound_calls', { ascending: false })
+        ]);
 
-  loadLeaderboard();
-</script>
+        if (goalsResponse.error) throw goalsResponse.error;
+        if (statsResponse.error) throw statsResponse.error;
+
+        const rawGoals = goalsResponse.data || {};
+        // CORRECTED: Map the database column names to the names the script expects
+        const goals = {
+            calls: rawGoals.target_calls,
+            avg_call_time: rawGoals.avg_call_time,
+            total_call_time: rawGoals.total_call_time,
+            sales: rawGoals.sales_target
+        };
+        const stats = statsResponse.data || [];
+
+        // Clear loading state and any previous content
+        leaderboardContainer.innerHTML = '';
+
+        if (stats.length === 0) {
+          leaderboardContainer.innerHTML = '<p class="text-center py-10 text-gray-500">No call data yet for today.</p>';
+          return;
+        }
+
+        // Render each rep's row
+        stats.forEach(repData => renderRepRow(repData, goals));
+
+      } catch (error) {
+        console.error('Error loading leaderboard:', error);
+        leaderboardContainer.innerHTML = `<p class="text-center py-10 text-red-500 font-semibold">Failed to load leaderboard data. Error: ${error.message}</p>`;
+      }
+    }
+
+    // --- INITIAL LOAD ---
+    loadLeaderboard();
+
+  </script>
+</body>
+</html>
