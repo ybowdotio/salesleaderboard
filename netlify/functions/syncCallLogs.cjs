@@ -22,7 +22,9 @@ exports.handler = async function () {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  const todayStart = dayjs().tz('America/Chicago').startOf('day').toISOString();
+  // 🟧 FIXED: Use Unix timestamp (ms) instead of ISO string
+  const todayStart = dayjs().tz('America/Chicago').startOf('day').valueOf();
+
   const callProperties = [
     'hs_call_title',
     'hs_call_duration',
@@ -48,7 +50,7 @@ exports.handler = async function () {
                 {
                   propertyName: 'hs_timestamp',
                   operator: 'GTE',
-                  value: todayStart,
+                  value: todayStart, // ✅ numeric timestamp in ms
                 },
               ],
             },
@@ -67,12 +69,13 @@ exports.handler = async function () {
       );
 
       const results = response.data.results || [];
+
       const callsToInsert = results.map((call) => {
         const props = call.properties || {};
         return {
           call_id: call.id,
           owner_id: props.hubspot_owner_id,
-          owner_name: '', // optional to backfill
+          owner_name: '', // optional for later sync
           title: props.hs_call_title,
           duration_seconds: parseInt(props.hs_call_duration || '0', 10),
           from_number: props.hs_call_from_number,
