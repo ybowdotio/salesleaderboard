@@ -16,11 +16,12 @@
 [functions.syncDealsFinal]
   schedule = "@hourly"
 
-# The schedule for the main call sync remains.
+# FOR TESTING: Schedules the main call sync to run every minute.
+# NOTE: Change back to "4-59/5 * * * *" for production.
 [functions."synccalllogs-background"]
-  schedule = "4-59/5 * * * *"
+  schedule = "* * * * *"
 
-# The schedule for syncLeaderboardStats has been temporarily removed for testing.
-# The function will now only be a standard, on-demand function.
-# [functions."syncLeaderboardStats"]
-#  schedule = "*/5 11-21 * * *"
+# FOR TESTING: Schedules the leaderboard summary function to run every minute.
+# NOTE: Change back to "*/5 * * * *" for production.
+[functions."syncLeaderboardStats"]
+  schedule = "* * * * *"
