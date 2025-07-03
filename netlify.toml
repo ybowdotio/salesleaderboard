@@ -1,11 +1,10 @@
 [build]
   publish = "."
-  command = ""  # leave blank or "npm run build" if needed later
+  command = ""
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-[functions."syncDeals"]
+[functions."syncDealsClean"]
   schedule = "@hourly"
-
