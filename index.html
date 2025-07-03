@@ -119,9 +119,9 @@
           <div class="absolute inset-0 flex items-center justify-center">
             <span class="font-semibold text-gray-800 text-sm">${label}</span>
           </div>
-          ${overGoal ? `
-            <div class="absolute top-0 right-0 h-full w-8 runner-animate" style="left: calc(${percentage}% - 1rem);">
-              <img src="obstacles.gif" alt="Runner" class="h-8 w-8 -mt-2">
+          ${percentage > 0 ? `
+            <div class="absolute bottom-full h-8 w-8 runner-animate" style="left: ${percentage}%; transform: translateX(-30%); margin-bottom: 0.125rem;">
+              <img src="obstacles.gif" alt="Runner" class="h-full w-full">
             </div>
           ` : ''}
         </div>
