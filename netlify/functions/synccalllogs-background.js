@@ -50,7 +50,7 @@ exports.handler = async () => {
           filters: [
             { propertyName: 'hs_timestamp', operator: 'GTE', value: nextCursor },
             { propertyName: 'hs_timestamp', operator: 'LTE', value: endOfMonth },
-            { propertyName: 'hs_object_id', operator: 'NIN', values: lastProcessedIds }
+            { propertyName: 'hs_object_id', operator: 'NOT_IN', values: lastProcessedIds }
           ]
         }],
         sorts: [{ propertyName: 'hs_timestamp', direction: 'ASCENDING' }],
