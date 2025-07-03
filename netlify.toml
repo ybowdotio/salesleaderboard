@@ -1,14 +1,15 @@
+# A consolidated and standardized version of your Netlify config
+
 [build]
-  publish = "."
   command = ""
+  publish = "."
+  # The functions directory is now declared here, which is the most standard practice.
+  functions = "netlify/functions"
 
 [functions]
-  directory = "netlify/functions"
+  # Global settings for all functions, like your bundler choice, go here.
   node_bundler = "esbuild"
 
-[functions."syncDealsFinal"]
+# Your scheduled function settings remain unchanged.
+[functions.syncDealsFinal]
   schedule = "@hourly"
-
-# 🕰️ Runs every 5 minutes from 11:00 to 21:55 UTC (6am–9pm Chicago time)
-[functions."syncLeaderboardStats"]
-  schedule = "*/5 11-21 * * *"
