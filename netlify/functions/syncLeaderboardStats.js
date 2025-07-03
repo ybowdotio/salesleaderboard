@@ -1,5 +1,4 @@
 // netlify/functions/syncLeaderboardStats.js
-const fetch = require('node-fetch');
 const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(
@@ -10,64 +9,67 @@ const supabase = createClient(
 exports.handler = async () => {
   console.info('📊 Starting syncLeaderboardStats...');
 
-  // Use yesterday's date (Chicago timezone offset by -5 or -6) to avoid empty today data
-  // TODO: Update to today's date after data availability improves
+  // Calculate yesterday date in Chicago timezone for log_date
   const now = new Date();
-  // Get yesterday in UTC-5 (Chicago)
-  const chicagoOffsetHours = 5; // Change to 6 for daylight savings as needed
+  const chicagoOffsetHours = 5; // adjust to 6 if DST applies
   const utcMillis = now.getTime();
   const chicagoMillis = utcMillis - chicagoOffsetHours * 60 * 60 * 1000;
   const chicagoDate = new Date(chicagoMillis);
   chicagoDate.setHours(0, 0, 0, 0);
   const log_date = chicagoDate.toISOString().split('T')[0];
-
   console.info(`🗓️ Using log_date: ${log_date}`);
 
   try {
-    // Compose the SQL to upsert leaderboard stats from calls aggregated by rep for the date
-    const sql = `
-      insert into today_leaderboard_stats
-      (log_date, rep_id, rep_name, total_outbound_calls, avg_call_time, total_call_time)
-      select
-        $1::date as log_date,
-        owner_id as rep_id,
-        owner_name as rep_name,
-        count(*)::int as total_outbound_calls,
-        avg(duration_seconds)::int as avg_call_time,
-        sum(duration_seconds)::int as total_call_time
-      from calls
-      where timestamp_date = $1::date
-      group by owner_id, owner_name
-      on conflict (log_date, rep_id) do update
-      set
-        rep_name = excluded.rep_name,
-        total_outbound_calls = excluded.total_outbound_calls,
-        avg_call_time = excluded.avg_call_time,
-        total_call_time = excluded.total_call_time;
-    `;
+    // Step 1: Query aggregated call data from 'calls' table for log_date
+    const { data: aggregatedCalls, error: selectError } = await supabase
+      .from('calls')
+      .select(`
+        owner_id,
+        owner_name,
+        total_calls:count,
+        avg_call_time:avg(duration_seconds),
+        total_call_time:sum(duration_seconds)
+      `)
+      .eq('timestamp_date', log_date)
+      .group('owner_id,owner_name')
+      .order('total_calls', { ascending: false });
 
-    // Run the SQL with parameterized query
-    const { error } = await supabase.rpc('execute_sql', {
-      params: [log_date],
-      query_text: sql,
-    });
-
-    // If you do NOT have 'execute_sql' function created in your database (likely),
-    // Replace the above with direct call using supabase.query (this is a mock, see note below)
-    // const { error } = await supabase.query(sql, [log_date]); // This is NOT a real method!
-
-    // So instead, let's run it with supabase.from().insert() or you can create a Postgres function and call .rpc()
-
-    // Alternative approach: Just fetch aggregated data from calls table and upsert with supabase.from()
-    // But this is a workaround if you do NOT want raw SQL in your functions
-
-    if (error) {
-      console.error('❌ SQL error:', error);
-      return { statusCode: 500, body: JSON.stringify(error) };
+    if (selectError) {
+      console.error('❌ Error fetching aggregated calls:', selectError);
+      return { statusCode: 500, body: JSON.stringify(selectError) };
     }
 
-    console.info('✅ Leaderboard sync complete.');
-    return { statusCode: 200, body: `Synced leaderboard rows for ${log_date}` };
+    console.info(`📞 Aggregated ${aggregatedCalls.length} reps with calls`);
+
+    // Step 2: Map results to insertable/updatable rows for leaderboard table
+    const rowsToUpsert = aggregatedCalls.map((row) => ({
+      log_date,
+      rep_id: row.owner_id,
+      rep_name: row.owner_name || 'Unknown Rep',
+      total_outbound_calls: row.total_calls,
+      avg_call_time: Math.round(row.avg_call_time || 0),
+      total_call_time: row.total_call_time || 0,
+    }));
+
+    if (rowsToUpsert.length === 0) {
+      console.info('🚫 No leaderboard rows to upsert');
+      return { statusCode: 200, body: 'No leaderboard rows to upsert' };
+    }
+
+    // Step 3: Upsert leaderboard rows into 'today_leaderboard_stats' table
+    const { error: upsertError } = await supabase
+      .from('today_leaderboard_stats')
+      .upsert(rowsToUpsert, {
+        onConflict: ['log_date', 'rep_id'],
+      });
+
+    if (upsertError) {
+      console.error('❌ Error upserting leaderboard rows:', upsertError);
+      return { statusCode: 500, body: JSON.stringify(upsertError) };
+    }
+
+    console.info(`✅ Synced ${rowsToUpsert.length} leaderboard rows for ${log_date}`);
+    return { statusCode: 200, body: `Synced ${rowsToUpsert.length} leaderboard rows for ${log_date}` };
   } catch (err) {
     console.error('❌ Unexpected error:', err);
     return { statusCode: 500, body: err.toString() };
