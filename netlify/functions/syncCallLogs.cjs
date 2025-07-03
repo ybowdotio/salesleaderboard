@@ -13,7 +13,7 @@ exports.handler = async () => {
   if (!HUBSPOT_PRIVATE_APP_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Missing environment variables' }),
+      body: JSON.stringify({ error: 'Missing critical environment variables' }),
     };
   }
 
@@ -30,94 +30,102 @@ exports.handler = async () => {
     'hs_call_body',
   ];
 
-  const todayISO = dayjs().tz('America/Chicago').format('YYYY-MM-DD');
+  // Define the start and end of the day in UTC for the query
+  const startOfDay = dayjs().tz('America/Chicago').startOf('day').toISOString();
+  const endOfDay = dayjs().tz('America/Chicago').endOf('day').toISOString();
 
-  const hsUrl = new URL('https://api.hubapi.com/crm/v3/objects/calls');
-  hsUrl.searchParams.set('limit', '50');
-  hsUrl.searchParams.set('sort', '-hs_timestamp');
-  hsUrl.searchParams.set('properties', callProperties.join(','));
+  // Use the Search API endpoint
+  const hsUrl = 'https://api.hubapi.com/crm/v3/objects/calls/search';
+
+  const requestBody = {
+    filterGroups: [
+      {
+        filters: [
+          {
+            propertyName: 'hs_timestamp',
+            operator: 'GTE',
+            value: startOfDay
+          },
+          {
+            propertyName: 'hs_timestamp',
+            operator: 'LTE',
+            value: endOfDay
+          }
+        ]
+      }
+    ],
+    properties: callProperties,
+    sorts: [{ propertyName: 'hs_timestamp', direction: 'ASCENDING' }],
+    limit: 100
+  };
 
   try {
-    const response = await fetch(hsUrl.href, {
+    const response = await fetch(hsUrl, {
+      method: 'POST',
       headers: {
-        Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
+        'Authorization': `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
         'Content-Type': 'application/json',
       },
+      body: JSON.stringify(requestBody)
     });
 
     if (!response.ok) {
       const errorText = await response.text();
+      // Log the detailed error for debugging
+      console.error(`HubSpot API Error: ${errorText}`);
       return {
         statusCode: response.status,
-        body: JSON.stringify({ error: errorText }),
+        body: JSON.stringify({ error: `HubSpot API Error: ${errorText}` }),
       };
     }
 
     const json = await response.json();
     const calls = json.results || [];
 
-    const rows = calls
-      .map((call) => {
-        const ts = call.properties.hs_timestamp;
-        if (!ts || !ts.startsWith(todayISO)) return null;
-
-        return {
-          call_id: call.id,
-          timestamp_iso: ts,
-          rep_id: call.properties.hubspot_owner_id || null,
-          duration_seconds: parseInt(call.properties.hs_call_duration || '0', 10),
-          from_number: call.properties.hs_call_from_number || null,
-          to_number: call.properties.hs_call_to_number || null,
-          disposition: call.properties.hs_call_disposition || null,
-          body: call.properties.hs_call_body || null,
-        };
-      })
-      .filter(Boolean);
-
-    if (rows.length > 0) {
-      const { error: insertError } = await supabase.from('calls').upsert(rows, {
-        onConflict: ['call_id'],
-      });
-
-      if (insertError) {
-        console.error('Insert error:', insertError);
-        await supabase.from('sync_logs').insert({
-          function_name: 'syncCallLogs',
-          status: 'error',
-          message: insertError.message,
-        });
-        return {
-          statusCode: 500,
-          body: JSON.stringify({ error: insertError.message }),
-        };
-      }
+    if (calls.length === 0) {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ success: true, inserted: 0, message: 'No new calls from HubSpot to process.' }),
+      };
     }
 
-    await supabase.from('sync_logs').insert({
-      function_name: 'syncCallLogs',
-      status: 'success',
-      message: `Inserted ${rows.length} calls for ${todayISO}.`,
+    const rows = calls.map((call) => ({
+      call_id: call.id,
+      timestamp_iso: call.properties.hs_timestamp,
+      rep_id: call.properties.hubspot_owner_id || null,
+      duration_seconds: Math.round(parseInt(call.properties.hs_call_duration || '0', 10) / 1000),
+      from_number: call.properties.hs_call_from_number || null,
+      to_number: call.properties.hs_call_to_number || null,
+      disposition: call.properties.hs_call_disposition || null,
+      body: call.properties.hs_call_body || null,
+    }));
+
+    const { error: insertError } = await supabase.from('calls').upsert(rows, {
+      onConflict: 'call_id',
     });
+
+    if (insertError) {
+      console.error('Supabase insert error:', insertError);
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: `Supabase insert error: ${insertError.message}` }),
+      };
+    }
 
     return {
       statusCode: 200,
       body: JSON.stringify({
         success: true,
         inserted: rows.length,
-        message: `Processed ${calls.length} calls from HubSpot.`,
+        message: `Processed and upserted ${rows.length} calls from HubSpot.`,
       }),
     };
-  } catch (err) {
-    console.error('Unexpected error:', err);
-    await supabase.from('sync_logs').insert({
-      function_name: 'syncCallLogs',
-      status: 'error',
-      message: err.message,
-    });
 
+  } catch (err) {
+    console.error('Unexpected function error:', err);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: err.message }),
+      body: JSON.stringify({ error: `Unexpected function error: ${err.message}` }),
     };
   }
 };
