@@ -1,6 +1,5 @@
-// netlify/functions/syncReps.js
-const axios = require('axios');
-const { createClient } = require('@supabase/supabase-js');
+import axios from 'axios';
+import { createClient } from '@supabase/supabase-js';
 
 // Env variables
 const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
@@ -9,7 +8,7 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-exports.handler = async () => {
+export const handler = async () => {
   console.info('🔁 Starting rep sync...');
 
   if (!HUBSPOT_PRIVATE_APP_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -48,7 +47,7 @@ exports.handler = async () => {
     }
 
     const { error } = await supabase.from('reps').upsert(reps, {
-      onConflict: ['id']
+      onConflict: 'id' // Correct onConflict syntax is just the column name
     });
 
     if (error) {
