@@ -1,8 +1,6 @@
-// netlify/functions/syncCallLogs.js
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
-// Environment variables
 const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -17,13 +15,11 @@ exports.handler = async () => {
   }
 
   try {
-    // 🗓️ Today's UTC ISO date (e.g. "2025-07-02")
     const now = new Date();
     const todayISO = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
       .toISOString()
       .split('T')[0];
 
-    // 🔍 Fetch calls from HubSpot (limit can be raised if paginating later)
     const callsResponse = await axios.post(
       'https://api.hubapi.com/crm/v3/objects/calls/search',
       {
@@ -31,6 +27,7 @@ exports.handler = async () => {
         sorts: ['-hs_timestamp'],
         properties: [
           'hs_timestamp',
+          'hs_createdate',
           'direction',
           'hs_call_duration',
           'hubspot_owner_id'
@@ -50,73 +47,75 @@ exports.handler = async () => {
 
     for (const call of calls) {
       const props = call.properties || {};
-      const timestampISO = props.hs_timestamp;
-      if (!timestampISO || !timestampISO.startsWith(todayISO)) {
-        console.info(`⏩ Skipping call outside today. Call ID: ${call.id}`);
+      let rawTimestamp = props.hs_timestamp || props.hs_createdate || call.createdAt;
+
+      if (!rawTimestamp) {
+        console.warn(`⚠️ Skipping call with no timestamp. Call ID: ${call.id}`);
         continue;
       }
 
-      const timestamp = new Date(timestampISO);
+      const timestamp = new Date(rawTimestamp);
+      if (isNaN(timestamp)) {
+        console.warn(`⚠️ Skipping call with invalid timestamp: ${rawTimestamp}`);
+        continue;
+      }
+
+      const timestampISO = timestamp.toISOString();
       const timestampDate = timestampISO.split('T')[0];
       const timestampYear = timestamp.getUTCFullYear();
 
-      // 🔄 Fetch associated contact
+      if (timestampDate !== todayISO) {
+        console.info(`⏩ Skipping call outside today (${timestampDate} !== ${todayISO}). Call ID: ${call.id}`);
+        continue;
+      }
+
+      // Fetch contact
       let contactId = null;
       try {
         const assocRes = await axios.get(
           `https://api.hubapi.com/crm/v4/objects/calls/${call.id}/associations/contacts`,
           {
             headers: {
-              Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
-              'Content-Type': 'application/json'
+              Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`
             }
           }
         );
         contactId = assocRes.data?.results?.[0]?.toObjectId;
       } catch {
-        console.warn(`⚠️ Failed to fetch contact association for call ID: ${call.id}`);
+        console.warn(`⚠️ Failed to fetch contact association. Call ID: ${call.id}`);
       }
 
-      if (!contactId) {
-        console.warn(`⚠️ Skipping call without contact ID. Call ID: ${call.id}`);
-        continue;
-      }
+      if (!contactId) continue;
 
-      // 👤 Fetch contact name
+      // Contact name
       let contactName = null;
       try {
-        const contactRes = await axios.get(
+        const res = await axios.get(
           `https://api.hubapi.com/crm/v3/objects/contacts/${contactId}?properties=firstname,lastname`,
           {
             headers: {
-              Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
-              'Content-Type': 'application/json'
+              Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`
             }
           }
         );
-        const cp = contactRes.data.properties;
+        const cp = res.data.properties;
         contactName = `${cp.firstname || ''} ${cp.lastname || ''}`.trim();
-      } catch {
-        console.warn(`⚠️ Failed to fetch contact name for ID: ${contactId}`);
-      }
+      } catch {}
 
-      // 👔 Fetch owner name
+      // Owner name
       let ownerName = null;
       if (props.hubspot_owner_id) {
         try {
-          const ownerRes = await axios.get(
+          const res = await axios.get(
             `https://api.hubapi.com/crm/v3/owners/${props.hubspot_owner_id}`,
             {
               headers: {
-                Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
-                'Content-Type': 'application/json'
+                Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`
               }
             }
           );
-          ownerName = ownerRes.data.fullName;
-        } catch {
-          console.warn(`⚠️ Failed to fetch owner name for ID: ${props.hubspot_owner_id}`);
-        }
+          ownerName = res.data.fullName;
+        } catch {}
       }
 
       allCalls.push({
@@ -138,7 +137,6 @@ exports.handler = async () => {
       return { statusCode: 200, body: 'No call records to sync.' };
     }
 
-    console.info(`📤 Upserting ${allCalls.length} call record(s) into Supabase...`);
     const { error } = await supabase.from('calls').upsert(allCalls, { onConflict: ['call_id'] });
 
     if (error) {
@@ -146,8 +144,8 @@ exports.handler = async () => {
       return { statusCode: 500, body: JSON.stringify(error) };
     }
 
-    console.info('✅ Sync complete.');
-    return { statusCode: 200, body: 'Sync complete.' };
+    console.info(`✅ Synced ${allCalls.length} calls.`);
+    return { statusCode: 200, body: `✅ Synced ${allCalls.length} calls.` };
   } catch (err) {
     console.error('❌ Error during sync:', err);
     return { statusCode: 500, body: err.toString() };
