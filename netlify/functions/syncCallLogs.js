@@ -23,7 +23,7 @@ exports.handler = async () => {
     const callsResponse = await axios.post(
       'https://api.hubapi.com/crm/v3/objects/calls/search',
       {
-        limit: 50,
+        limit: 30,
         sorts: ['-hs_timestamp'],
         properties: ['hs_timestamp', 'direction', 'hs_call_duration', 'hubspot_owner_id']
       },
