@@ -1,7 +1,6 @@
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
 
-// Environment variables
 const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -9,7 +8,7 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 exports.handler = async () => {
-  console.info('Starting call log sync...');
+  console.info('Starting sync...');
 
   if (!HUBSPOT_PRIVATE_APP_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     console.error('Missing environment variables');
@@ -17,25 +16,19 @@ exports.handler = async () => {
   }
 
   try {
-    // ✅ Only fetch calls from today (UTC)
-    const now = new Date();
-    const startOfDayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const startOfDayUnix = startOfDayUTC.getTime();
+    const todayISO = new Date().toISOString().split('T')[0]; // e.g. '2025-07-03'
+    const startOfTodayUnix = new Date(`${todayISO}T00:00:00.000Z`).getTime();
 
     const callsResponse = await axios.post(
       'https://api.hubapi.com/crm/v3/objects/calls/search',
       {
-        filterGroups: [
-          {
-            filters: [
-              {
-                propertyName: 'hs_timestamp',
-                operator: 'GTE',
-                value: startOfDayUnix
-              }
-            ]
-          }
-        ],
+        filterGroups: [{
+          filters: [{
+            propertyName: 'hs_timestamp',
+            operator: 'GTE',
+            value: startOfTodayUnix
+          }]
+        }],
         limit: 30,
         properties: [
           'hs_timestamp',
@@ -54,8 +47,7 @@ exports.handler = async () => {
     );
 
     const calls = callsResponse.data.results;
-    console.info(`Fetched ${calls.length} calls from HubSpot`);
-
+    console.info(`Fetched ${calls.length} calls`);
     const allCalls = [];
 
     for (const call of calls) {
@@ -83,12 +75,11 @@ exports.handler = async () => {
       const timestampDate = timestampISO.split('T')[0];
       const timestampYear = timestamp.getFullYear();
 
-      if (timestamp < startOfDayUTC) {
+      if (timestamp < startOfTodayUnix) {
         console.info(`Skipping call before today. Call ID: ${call.id}`);
         continue;
       }
 
-      // 🔄 Fetch contact association
       let contactId = null;
       try {
         const assocRes = await axios.get(
@@ -172,10 +163,10 @@ exports.handler = async () => {
       return { statusCode: 500, body: JSON.stringify(error) };
     }
 
-    console.info('Call log sync complete.');
-    return { statusCode: 200, body: 'Call log sync complete.' };
+    console.info('Sync complete.');
+    return { statusCode: 200, body: 'Sync complete.' };
   } catch (error) {
-    console.error('Unexpected error during sync:', error);
+    console.error('Error during sync:', error);
     return { statusCode: 500, body: error.toString() };
   }
 };
