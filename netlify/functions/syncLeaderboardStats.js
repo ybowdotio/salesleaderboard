@@ -1,9 +1,4 @@
 const { createClient } = require('@supabase/supabase-js');
-const dayjs = require('dayjs');
-const utc = require('dayjs/plugin/utc');
-const timezone = require('dayjs/plugin/timezone');
-dayjs.extend(utc);
-dayjs.extend(timezone);
 
 exports.handler = async function () {
   const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -19,7 +14,6 @@ exports.handler = async function () {
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const todayDate = dayjs().tz('America/Chicago').format('YYYY-MM-DD');
 
   const rawSQL = `
     insert into today_leaderboard_stats (
@@ -31,15 +25,14 @@ exports.handler = async function () {
       avg_call_time
     )
     select
-      timezone('America/Chicago', c.timestamp)::date as log_date,
-      c.owner_id as rep_id,
-      r.name as rep_name,
+      (timestamp_iso at time zone 'America/Chicago')::date as log_date,
+      owner_id as rep_id,
+      owner_name as rep_name,
       count(*) as total_outbound_calls,
-      sum(c.duration_seconds) as total_call_time,
-      avg(c.duration_seconds)::int as avg_call_time
-    from calls c
-    join reps r on c.owner_id = r.id
-    where timezone('America/Chicago', c.timestamp)::date = current_date at time zone 'America/Chicago'
+      sum(duration_seconds)::int as total_call_time,
+      avg(duration_seconds)::int as avg_call_time
+    from calls
+    where (timestamp_iso at time zone 'America/Chicago')::date = (current_date at time zone 'America/Chicago')
     group by log_date, rep_id, rep_name
     on conflict (log_date, rep_id)
     do update set
@@ -50,8 +43,10 @@ exports.handler = async function () {
   `;
 
   try {
-    console.info('📊 About to send raw SQL to Supabase...');
-    const { error } = await supabase.rpc('execute_raw_sql', { sql: rawSQL });
+    console.log('📤 About to send raw SQL to Supabase...');
+    const { error } = await supabase.rpc('execute_raw_sql', {
+      sql: rawSQL,
+    });
 
     if (error) {
       console.error('❌ Leaderboard stats sync failed:', error);
@@ -71,7 +66,7 @@ exports.handler = async function () {
     await supabase.from('sync_logs').insert({
       function_name: 'syncLeaderboardStats',
       status: 'success',
-      message: `Leaderboard stats synced for ${todayDate}`,
+      message: 'Leaderboard stats synced for today.',
     });
 
     return {
@@ -79,7 +74,7 @@ exports.handler = async function () {
       body: JSON.stringify({ success: true }),
     };
   } catch (err) {
-    console.error('❌ Unexpected error during leaderboard sync:', err);
+    console.error('Unexpected error during leaderboard sync:', err);
     await supabase.from('sync_logs').insert({
       function_name: 'syncLeaderboardStats',
       status: 'error',
@@ -88,10 +83,7 @@ exports.handler = async function () {
 
     return {
       statusCode: 500,
-      body: JSON.stringify({
-        error: 'Unexpected error',
-        message: err.message,
-      }),
+      body: JSON.stringify({ error: 'Unexpected error', message: err.message }),
     };
   }
 };
