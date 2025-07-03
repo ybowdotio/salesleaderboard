@@ -185,24 +185,30 @@
       try {
         const todayInChicago = dayjs().tz('America/Chicago').format('YYYY-MM-DD');
 
-        const { data: stats, error: statsError } = await supabase
-          .from('today_leaderboard_stats')
-          .select('*')
-          .eq('log_date', todayInChicago)
-          .order('total_outbound_calls', { ascending: false });
+        // Fetch goals and stats data in parallel for efficiency
+        const [goalsResponse, statsResponse] = await Promise.all([
+          supabase.from('daily_goals').select('*').eq('id', 'global-goals').single(),
+          supabase.from('today_leaderboard_stats').select('*').eq('log_date', todayInChicago).order('total_outbound_calls', { ascending: false })
+        ]);
 
-        if (statsError) throw statsError;
+        if (goalsResponse.error) throw goalsResponse.error;
+        if (statsResponse.error) throw statsResponse.error;
 
+        const rawGoals = goalsResponse.data || {};
+        const stats = statsResponse.data || [];
+        
+        // Map the database column names to the names the script expects
         const goals = {
-            calls: 50,
-            avg_call_time: 180,
-            total_call_time: 14400,
-            sales: 5000
+            calls: rawGoals.target_calls || 0,
+            // Convert Total Call Time goal from minutes to seconds
+            total_call_time: (rawGoals.total_call_time || 0) * 60,
+            avg_call_time: rawGoals.avg_call_time || 0,
+            sales: rawGoals.sales_target || 0
         };
 
         leaderboardContainer.innerHTML = '';
 
-        if (!stats || stats.length === 0) {
+        if (stats.length === 0) {
           leaderboardContainer.innerHTML = '<p class="text-center py-12 text-gray-500">No call data yet for today.</p>';
           return;
         }
