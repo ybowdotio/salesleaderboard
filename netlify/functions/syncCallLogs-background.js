@@ -1,6 +1,8 @@
-const { createClient } = require('@supabase/supabase-js');
+import { createClient } from '@supabase/supabase-js';
 
-exports.handler = async () => {
+// fetch is globally available in Netlify functions, so no import is needed.
+
+export const handler = async () => {
   const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
   const SUPABASE_URL = process.env.SUPABASE_URL;
   const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -74,7 +76,6 @@ exports.handler = async () => {
         totalProcessed += rows.length;
         const latestCursorInBatch = calls[calls.length - 1].id;
         
-        // Update the cursor after every successful batch
         const { error: updateCursorError } = await supabase.from('sync_cursor').upsert(
             { source: syncSource, cursor: latestCursorInBatch, updated_at: new Date().toISOString() },
             { onConflict: 'source' }
