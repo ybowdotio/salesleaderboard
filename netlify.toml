@@ -16,12 +16,11 @@
 [functions.syncDealsFinal]
   schedule = "@hourly"
 
-# Schedules the syncLeaderboardStats function to run every 5 minutes between 11:00 and 21:55 UTC.
-# Note: This is restored from your previous configuration.
-[functions."syncLeaderboardStats"]
-  schedule = "*/5 11-21 * * *"
-
-# Schedules the synccalllogs-background function to run every 5 minutes, but offset by 4 minutes.
-# This runs at minute 4, 9, 14, 19, etc. of every hour.
+# The schedule for the main call sync remains.
 [functions."synccalllogs-background"]
   schedule = "4-59/5 * * * *"
+
+# The schedule for syncLeaderboardStats has been temporarily removed for testing.
+# The function will now only be a standard, on-demand function.
+# [functions."syncLeaderboardStats"]
+#  schedule = "*/5 11-21 * * *"
