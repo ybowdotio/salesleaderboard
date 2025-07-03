@@ -25,7 +25,7 @@ exports.handler = async function () {
       avg_call_time
     )
     select
-      timezone('America/Chicago', c.hs_timestamp)::date as log_date,
+      timezone('America/Chicago', c.timestamp)::date as log_date,
       c.owner_id as rep_id,
       r.name as rep_name,
       count(*) as total_outbound_calls,
@@ -33,7 +33,7 @@ exports.handler = async function () {
       avg(c.duration_seconds)::int as avg_call_time
     from calls c
     join reps r on c.owner_id = r.id
-    where timezone('America/Chicago', c.hs_timestamp)::date = (current_date at time zone 'America/Chicago') - interval '1 day'
+    where timezone('America/Chicago', c.timestamp)::date = (current_date at time zone 'America/Chicago') - interval '1 day'
     group by log_date, rep_id, rep_name
     on conflict (log_date, rep_id)
     do update set
