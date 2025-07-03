@@ -1,7 +1,6 @@
 // netlify/functions/syncCallLogs.js
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
-const { DateTime } = require('luxon');
 
 const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -18,12 +17,13 @@ exports.handler = async () => {
   }
 
   try {
-    const todayISO = DateTime.now().setZone('America/Chicago').toISODate();
+    const localNow = new Date();
+    const todayISO = localNow.toISOString().split('T')[0];
 
     const callsResponse = await axios.post(
       'https://api.hubapi.com/crm/v3/objects/calls/search',
       {
-        limit: 50,
+        limit: 100,
         sorts: ['-hs_timestamp'],
         properties: ['hs_timestamp', 'direction', 'hs_call_duration', 'hubspot_owner_id']
       },
@@ -39,8 +39,9 @@ exports.handler = async () => {
     console.info(`📥 Pulled ${calls.length} calls from HubSpot`);
 
     const allCalls = [];
-
     for (const call of calls) {
+      if (allCalls.length >= 50) break;
+
       const props = call.properties || {};
       const rawTimestamp = props.hs_timestamp || props.hs_createdate || call.createdAt;
 
@@ -51,7 +52,7 @@ exports.handler = async () => {
 
       const timestamp = new Date(rawTimestamp);
       const timestampISO = timestamp.toISOString();
-      const timestampDate = DateTime.fromJSDate(timestamp).setZone('America/Chicago').toISODate();
+      const timestampDate = timestampISO.split('T')[0];
       const timestampYear = timestamp.getUTCFullYear();
 
       console.log(`🧭 Call ID: ${call.id}`);
