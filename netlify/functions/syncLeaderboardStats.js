@@ -1,95 +1,104 @@
 // netlify/functions/syncLeaderboardStats.js
 const { createClient } = require('@supabase/supabase-js');
-const { DateTime } = require('luxon');
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 exports.handler = async () => {
-  console.info('📊 Starting leaderboard stat sync...');
+  console.info('📊 Starting syncLeaderboardStats...');
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    console.error('❌ Missing Supabase env vars');
-    return { statusCode: 500, body: 'Missing env vars' };
-  }
+  try {
+    // ⏱️ Chicago time offset (UTC-5/6 depending on DST)
+    const now = new Date();
+    const offsetDate = new Date(now);
+    offsetDate.setDate(now.getDate() - 1); // 🔁 Use "yesterday" for now
+    const chicagoDate = offsetDate.toLocaleDateString('en-CA', {
+      timeZone: 'America/Chicago'
+    }); // YYYY-MM-DD
 
-  // 🕒 TEMPORARY: Use YESTERDAY'S DATE (local time) to avoid missing early-morning calls
-  // ❗ Change `.minus({ days: 1 })` back to `.now()` when ready to resume daily sync
-  const logDate = DateTime.now().setZone('America/Chicago').minus({ days: 1 }).toISODate();
+    console.info(`🗓️ Using log_date: ${chicagoDate}`);
 
-  // Pull all calls from yesterday
-  const { data: calls, error: callErr } = await supabase
-    .from('calls')
-    .select('*')
-    .eq('timestamp_date', logDate);
-
-  if (callErr) {
-    console.error('❌ Error fetching calls:', callErr);
-    return { statusCode: 500, body: JSON.stringify(callErr) };
-  }
-
-  if (!calls || calls.length === 0) {
-    console.info('📭 No call data for leaderboard. Skipping update.');
-    return { statusCode: 200, body: 'No call data for yesterday.' };
-  }
-
-  // Group calls by rep_id
-  const statsMap = new Map();
-
-  for (const call of calls) {
-    const id = call.owner_id;
-    if (!id) continue;
-
-    if (!statsMap.has(id)) {
-      statsMap.set(id, []);
-    }
-    statsMap.get(id).push(call);
-  }
-
-  const rows = [];
-
-  for (const [rep_id, callsForRep] of statsMap.entries()) {
-    const total = callsForRep.length;
-    const totalSecs = callsForRep.reduce((sum, c) => sum + (c.duration_seconds || 0), 0);
-    const outbound = callsForRep.filter(c => c.direction === 'OUTGOING').length;
-    const avgSecs = total > 0 ? Math.round(totalSecs / total) : 0;
-
-    // Lookup rep name from reps table
-    const { data: rep, error: repErr } = await supabase
+    // 📤 Fetch reps from Supabase
+    const { data: reps, error: repsError } = await supabase
       .from('reps')
-      .select('name')
-      .eq('id', rep_id)
-      .maybeSingle();
+      .select('id, name');
 
-    if (repErr) {
-      console.warn(`⚠️ Could not lookup name for rep ${rep_id}`);
+    if (repsError) {
+      console.error('❌ Failed to fetch reps:', repsError);
+      return { statusCode: 500, body: 'Failed to fetch reps' };
     }
 
-    rows.push({
-      rep_id,
-      rep_name: rep?.name || 'Unknown',
-      total_outbound_calls: outbound,
-      avg_call_time: avgSecs,
-      total_call_time: totalSecs,
-      log_date: logDate
-    });
+    const repMap = {};
+    reps.forEach((r) => (repMap[r.id] = r.name));
+    console.info(`👥 Loaded ${reps.length} reps`);
+
+    // 📞 Aggregate call data
+    const { data: calls, error: callsError } = await supabase
+      .from('calls')
+      .select('owner_id, duration_seconds')
+      .eq('timestamp_date', chicagoDate);
+
+    if (callsError) {
+      console.error('❌ Failed to fetch call logs:', callsError);
+      return { statusCode: 500, body: 'Failed to fetch call logs' };
+    }
+
+    console.info(`📞 Processing ${calls.length} calls`);
+
+    // 🧮 Group by rep_id
+    const leaderboard = {};
+    for (const call of calls) {
+      const repId = call.owner_id;
+      if (!repId) continue;
+
+      if (!leaderboard[repId]) {
+        leaderboard[repId] = {
+          rep_id: repId,
+          rep_name: repMap[repId] || 'Unknown Rep',
+          total_outbound_calls: 0,
+          total_call_time: 0,
+          avg_call_time: 0,
+          log_date: chicagoDate
+        };
+      }
+
+      leaderboard[repId].total_outbound_calls += 1;
+      leaderboard[repId].total_call_time += call.duration_seconds || 0;
+    }
+
+    // 🧠 Compute average
+    for (const stat of Object.values(leaderboard)) {
+      stat.avg_call_time = stat.total_outbound_calls
+        ? Math.round(stat.total_call_time / stat.total_outbound_calls)
+        : 0;
+    }
+
+    const leaderboardRows = Object.values(leaderboard);
+    console.info(`📊 Prepared ${leaderboardRows.length} leaderboard rows`);
+
+    // 🪄 Upsert into today_leaderboard_stats
+    const { error: upsertError } = await supabase
+      .from('today_leaderboard_stats')
+      .upsert(leaderboardRows, {
+        onConflict: ['rep_id', 'log_date']
+      });
+
+    if (upsertError) {
+      console.error('❌ Upsert error:', upsertError);
+      return { statusCode: 500, body: 'Upsert failed' };
+    }
+
+    console.info('✅ Leaderboard sync complete');
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        message: `Synced ${leaderboardRows.length} leaderboard rows for ${chicagoDate}`
+      })
+    };
+  } catch (err) {
+    console.error('❌ Unexpected error:', err);
+    return { statusCode: 500, body: 'Internal server error' };
   }
-
-  // Upsert stats
-  const { error: upErr } = await supabase.from('today_leaderboard_stats').upsert(rows, {
-    onConflict: ['rep_id', 'log_date']
-  });
-
-  if (upErr) {
-    console.error('❌ Failed to upsert stats:', upErr);
-    return { statusCode: 500, body: JSON.stringify(upErr) };
-  }
-
-  console.info(`✅ Synced ${rows.length} leaderboard rows.`);
-  return {
-    statusCode: 200,
-    body: `Synced ${rows.length} leaderboard rows for ${logDate}`
-  };
 };
