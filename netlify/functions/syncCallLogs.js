@@ -22,7 +22,7 @@ exports.handler = async function () {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  const yesterdayDate = dayjs().tz('America/Chicago').subtract(1, 'day').format('YYYY-MM-DD');
+  const todayDate = dayjs().tz('America/Chicago').format('YYYY-MM-DD');
 
   const callProperties = [
     'hs_call_title',
@@ -55,8 +55,8 @@ exports.handler = async function () {
         if (!timestamp) return null;
 
         const localDate = dayjs(timestamp).tz('America/Chicago').format('YYYY-MM-DD');
-        if (localDate !== yesterdayDate) {
-          console.info(`Skipping call outside yesterday: ${timestamp}`);
+        if (localDate !== todayDate) {
+          console.info(`Skipping call outside today: ${timestamp}`);
           return null;
         }
 
@@ -69,13 +69,13 @@ exports.handler = async function () {
           to_number: props.hs_call_to_number,
           disposition: props.hs_call_disposition,
           body: props.hs_call_body,
-          timestamp: props.hs_timestamp, // direct ISO 8601 passthrough to timestamptz column
+          timestamp: props.hs_timestamp,
         };
       })
       .filter(Boolean);
 
     if (callsToInsert.length === 0) {
-      console.log('No call logs to insert for yesterday.');
+      console.log('No call logs to insert for today.');
       return {
         statusCode: 200,
         body: JSON.stringify({ message: 'No calls to insert.' }),
@@ -102,7 +102,7 @@ exports.handler = async function () {
     await supabase.from('sync_logs').insert({
       function_name: 'syncCallLogs',
       status: 'success',
-      message: `Inserted ${callsToInsert.length} calls for ${yesterdayDate}.`,
+      message: `Inserted ${callsToInsert.length} calls for ${todayDate}.`,
     });
 
     return {
