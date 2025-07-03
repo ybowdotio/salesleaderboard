@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 const { createClient } = require('@supabase/supabase-js');
 
 const hubspotToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
