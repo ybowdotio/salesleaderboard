@@ -1,8 +1,8 @@
 // netlify/functions/syncCallLogs.js
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
-const { DateTime } = require('luxon');
 
+// Env vars
 const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -18,12 +18,15 @@ exports.handler = async () => {
   }
 
   try {
-    const todayISO = DateTime.now().setZone('America/Chicago').toISODate(); // e.g., "2025-07-02"
+    // 👇 Temporary: use yesterday’s date until call data is reliably available earlier in the day
+    const now = new Date();
+    now.setDate(now.getDate() - 1); // yesterday
+    const yesterdayISO = now.toISOString().split('T')[0];
 
     const callsResponse = await axios.post(
       'https://api.hubapi.com/crm/v3/objects/calls/search',
       {
-        limit: 30,
+        limit: 30, // ⚠️ Must stay 30 to avoid overfetching
         sorts: ['-hs_timestamp'],
         properties: ['hs_timestamp', 'direction', 'hs_call_duration', 'hubspot_owner_id']
       },
@@ -49,23 +52,17 @@ exports.handler = async () => {
         continue;
       }
 
-      const timestamp = DateTime.fromISO(rawTimestamp, { zone: 'utc' }).setZone('America/Chicago');
-      const timestampISO = timestamp.toISO();
-      const timestampDate = timestamp.toISODate(); // e.g., "2025-07-02"
-      const timestampYear = timestamp.year;
+      const timestamp = new Date(rawTimestamp);
+      const timestampISO = timestamp.toISOString();
+      const timestampDate = timestampISO.split('T')[0];
+      const timestampYear = timestamp.getUTCFullYear();
 
-      console.log(`🧭 Call ID: ${call.id}`);
-      console.log(`   rawTimestamp: ${rawTimestamp}`);
-      console.log(`   local ISO:     ${timestampISO}`);
-      console.log(`   date only:     ${timestampDate}`);
-      console.log(`   today ISO:     ${todayISO}`);
-
-      if (timestampDate !== todayISO) {
-        console.info(`⏩ Skipping call not from today. ID: ${call.id}`);
+      if (timestampDate !== yesterdayISO) {
+        console.info(`⏩ Skipping call not from yesterday. ID: ${call.id}`);
         continue;
       }
 
-      // 🔄 Fetch contact association
+      // 🔄 Contact association
       let contactId = null;
       try {
         const assocRes = await axios.get(
@@ -107,29 +104,28 @@ exports.handler = async () => {
 
       // 👤 Owner name
       let ownerName = null;
-      if (props.hubspot_owner_id) {
+      const ownerId = props.hubspot_owner_id;
+      if (ownerId) {
         try {
-          const ownerRes = await axios.get(
-            `https://api.hubapi.com/crm/v3/owners/${props.hubspot_owner_id}`,
-            {
-              headers: {
-                Authorization: `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
-                'Content-Type': 'application/json'
-              }
-            }
-          );
-          ownerName = ownerRes.data.fullName;
+          const { data, error } = await supabase
+            .from('reps')
+            .select('name')
+            .eq('id', ownerId)
+            .single();
+
+          if (error) throw error;
+          ownerName = data.name;
         } catch (err) {
-          console.warn(`⚠️ Failed to fetch owner name for ID: ${props.hubspot_owner_id}`);
+          console.warn(`⚠️ Failed to fetch owner name for ID: ${ownerId}`);
         }
       }
 
       allCalls.push({
         call_id: call.id,
         contact_id: contactId,
-        owner_id: props.hubspot_owner_id || null,
+        owner_id: ownerId || null,
         duration_seconds: props.hs_call_duration ? parseInt(props.hs_call_duration) : null,
-        direction: props.direction || 'UNKNOWN',
+        direction: props.direction || null,
         contact_name: contactName || null,
         owner_name: ownerName || null,
         timestamp_iso: timestampISO,
@@ -151,7 +147,7 @@ exports.handler = async () => {
       return { statusCode: 500, body: JSON.stringify(error) };
     }
 
-    console.info('✅ Sync complete.');
+    console.info('✅ Call sync complete.');
     return { statusCode: 200, body: 'Call sync complete.' };
   } catch (err) {
     console.error('❌ Unexpected error:', err);
