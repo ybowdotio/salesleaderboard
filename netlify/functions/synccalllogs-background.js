@@ -1,6 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
 
-// fetch is globally available in Netlify functions, so no import is needed.
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 export const handler = async () => {
   const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
@@ -15,7 +19,8 @@ export const handler = async () => {
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const syncSource = 'calls';
+  // We'll use a new source name to avoid conflicts with the old full-sync cursor
+  const syncSource = 'calls_monthly_sync';
   let totalProcessed = 0;
 
   try {
@@ -30,10 +35,22 @@ export const handler = async () => {
     }
 
     let nextCursor = cursorData?.cursor;
+    
+    // Calculate the start and end of the current month
+    const now = dayjs().tz('America/Chicago');
+    const startOfMonth = now.startOf('month').toISOString();
+    const endOfMonth = now.endOf('month').toISOString();
 
     do {
       const hsUrl = 'https://api.hubapi.com/crm/v3/objects/calls/search';
       const requestBody = {
+        // This filter block limits the search to the current month
+        filterGroups: [{
+          filters: [
+            { propertyName: 'hs_timestamp', operator: 'GTE', value: startOfMonth },
+            { propertyName: 'hs_timestamp', operator: 'LTE', value: endOfMonth }
+          ]
+        }],
         sorts: [{ propertyName: 'hs_object_id', direction: 'ASCENDING' }],
         properties: [
           'hs_timestamp', 'hubspot_owner_id', 'hs_call_duration',
@@ -95,7 +112,7 @@ export const handler = async () => {
       body: JSON.stringify({
         success: true,
         inserted: totalProcessed,
-        message: `Sync complete. Processed ${totalProcessed} calls in this run.`,
+        message: `Sync complete for ${now.format('MMMM YYYY')}. Processed ${totalProcessed} calls.`,
       }),
     };
 
