@@ -1,14 +1,12 @@
-const { createClient } = require('@supabase/supabase-js');
-const { DateTime } = require('luxon');
+import { createClient } from '@supabase/supabase-js';
+import { DateTime } from 'luxon';
 
 const hubspotToken = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-exports.handler = async () => {
-  const chicagoToday = DateTime.now().setZone('America/Chicago').toISODate(); // e.g. "2025-07-03"
-
+export const handler = async () => {
   const callProperties = [
     'hs_timestamp',
     'hubspot_owner_id',
@@ -20,21 +18,31 @@ exports.handler = async () => {
     'hs_call_body',
   ];
 
-  // 1. Get last cursor
+  // Get today's date in America/Chicago
+  const today = DateTime.now().setZone('America/Chicago').toISODate(); // e.g. "2025-07-03"
+
+  // 1. Fetch current cursor
   const { data: cursorRow, error: cursorError } = await supabase
     .from('sync_cursor')
     .select('cursor')
     .eq('source', 'calls')
     .single();
 
-  const cursor = cursorRow?.cursor || null;
+  if (cursorError) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'Could not load cursor', details: cursorError.message }),
+    };
+  }
 
-  // 2. Build HubSpot request
+  const cursor = cursorRow?.cursor;
   const hsUrl = new URL('https://api.hubapi.com/crm/v3/objects/calls');
   hsUrl.searchParams.set('limit', '100');
   hsUrl.searchParams.set('properties', callProperties.join(','));
-  if (cursor) hsUrl.searchParams.set('after', cursor); // no sort param!
+  hsUrl.searchParams.set('sort', '-hs_timestamp');
+  if (cursor) hsUrl.searchParams.set('after', cursor);
 
+  // 2. Fetch from HubSpot
   const response = await fetch(hsUrl.href, {
     headers: {
       Authorization: `Bearer ${hubspotToken}`,
@@ -52,14 +60,11 @@ exports.handler = async () => {
   const json = await response.json();
   const calls = json.results || [];
 
-  // 3. Filter for today (Chicago timezone)
+  // 3. Transform + Filter for today's calls (America/Chicago)
   const rows = calls
     .map((c) => {
       const ts = c.properties.hs_timestamp;
-      const localDate = ts
-        ? DateTime.fromISO(ts, { zone: 'utc' }).setZone('America/Chicago').toISODate()
-        : null;
-
+      const localDate = DateTime.fromISO(ts, { zone: 'America/Chicago' }).toISODate();
       return {
         call_id: c.id,
         timestamp_iso: ts,
@@ -72,9 +77,9 @@ exports.handler = async () => {
         call_date: localDate,
       };
     })
-    .filter((row) => row.call_date === chicagoToday);
+    .filter((row) => row.call_date === today);
 
-  // 4. Insert new calls
+  // 4. Insert today's calls into Supabase
   const { error: insertError } = await supabase.from('calls').insert(rows);
   if (insertError) {
     return {
@@ -90,6 +95,7 @@ exports.handler = async () => {
     .upsert({
       source: 'calls',
       cursor: nextCursor,
+      updated_at: new Date().toISOString(),
     });
 
   if (updateError) {
