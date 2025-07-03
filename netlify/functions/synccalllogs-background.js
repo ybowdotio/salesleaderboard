@@ -1,4 +1,3 @@
-// Using CommonJS 'require' syntax
 const { createClient } = require('@supabase/supabase-js');
 const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
@@ -9,7 +8,6 @@ dayjs.extend(timezone);
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Using 'exports.handler' for CommonJS
 exports.handler = async () => {
   const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
   const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -96,4 +94,20 @@ exports.handler = async () => {
       }
     }
 
-    return { statusCode: 200, body: JSON.stringify({ success: true, inserted: totalProcessed, message: `Sync complete for ${now.format('MMMM
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        success: true,
+        inserted: totalProcessed,
+        message: `Sync complete for ${now.format('MMMM YYYY')}. Processed ${totalProcessed} calls.`,
+      }),
+    };
+
+  } catch (err) {
+    console.error('Function error:', err);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: `Function failed: ${err.message}` }),
+    };
+  }
+};
