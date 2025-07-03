@@ -15,54 +15,30 @@ exports.handler = async function () {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-  // ✅ Test query to verify RPC works
-  const rawSQL = `
-    select now() as server_time;
-  `;
+  const testSQL = `select now() as server_time`;
 
   try {
-    console.log('📤 Sending test SQL to Supabase...');
-
-    let result;
-    try {
-      result = await supabase.rpc('execute_raw_sql', { sql: rawSQL });
-    } catch (sqlError) {
-      console.error('❌ RPC call threw:', sqlError);
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: 'Supabase RPC failed', details: sqlError.message }),
-      };
-    }
-
-    if (result.error) {
-      console.error('⛔ RPC returned error:', result.error);
-      return {
-        statusCode: 500,
-        body: JSON.stringify({
-          error: 'RPC returned error',
-          details: result.error.message,
-        }),
-      };
-    }
-
-    console.log('✅ SQL executed successfully:', result.data);
-
-    await supabase.from('sync_logs').insert({
-      function_name: 'syncLeaderboardStats',
-      status: 'success',
-      message: 'Test SQL executed successfully.',
+    const { data, error } = await supabase.rpc('execute_raw_sql', {
+      sql: testSQL,
     });
+
+    if (error) {
+      console.error('Supabase RPC returned error:', error);
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: error.message }),
+      };
+    }
 
     return {
       statusCode: 200,
       body: JSON.stringify({
         success: true,
-        result: result.data,
+        result: data,
       }),
     };
-
   } catch (err) {
-    console.error('🔥 Unexpected function error:', err);
+    console.error('Unexpected error:', err);
     return {
       statusCode: 500,
       body: JSON.stringify({
