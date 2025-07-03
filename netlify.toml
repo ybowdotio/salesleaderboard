@@ -1,15 +1,27 @@
-# A consolidated and standardized version of your Netlify config
+# This file configures the build and deployment settings for Netlify.
 
 [build]
+  # The command to build the site. Empty because it's functions-only.
   command = ""
+  # The directory to publish. "." means the root directory.
   publish = "."
-  # The functions directory is now declared here, which is the most standard practice.
+  # The directory where Netlify will find the serverless functions.
   functions = "netlify/functions"
 
 [functions]
-  # Global settings for all functions, like your bundler choice, go here.
+  # Specifies the bundler to use for Node.js functions.
   node_bundler = "esbuild"
 
-# Your scheduled function settings remain unchanged.
+# Schedules the syncDealsFinal function to run once an hour.
 [functions.syncDealsFinal]
   schedule = "@hourly"
+
+# Schedules the syncLeaderboardStats function to run every 5 minutes between 11:00 and 21:55 UTC.
+# Note: This is restored from your previous configuration.
+[functions."syncLeaderboardStats"]
+  schedule = "*/5 11-21 * * *"
+
+# Schedules the synccalllogs-background function to run every 5 minutes, but offset by 4 minutes.
+# This runs at minute 4, 9, 14, 19, etc. of every hour.
+[functions."synccalllogs-background"]
+  schedule = "4-59/5 * * * *"
