@@ -114,7 +114,7 @@
       return `${pad(minutes)}:${pad(seconds)}`;
     }
     
-    function renderMetric(label, value, goal) {
+    function renderMetric(label, value, goal, hasTrophy = false) {
       const percentage = goal > 0 ? Math.min((value / goal) * 100, 100) : 0;
       const goalMet = goal > 0 && value >= goal;
       const barColor = 'bg-[#00A4BD]'; // Uniform HubSpot blue/teal color
@@ -135,13 +135,16 @@
 
           <!-- Colored progress bar -->
           <div 
-            class="absolute top-0 left-0 h-full ${barColor} rounded-sm bar-animate overflow-hidden ${goalMet ? 'goal-met-pulse' : ''}" 
+            class="relative flex items-center justify-center h-full ${barColor} rounded-sm bar-animate overflow-hidden ${goalMet ? 'goal-met-pulse' : ''}" 
             style="width: ${percentage}%;"
           >
             <!-- White text label (sits inside the colored bar and is revealed as it grows) -->
-            <div class="absolute inset-0 flex items-center justify-center">
-              <span class="font-bold text-xs text-white">${label}</span>
-            </div>
+            <span class="font-bold text-xs text-white">${label}</span>
+            
+            <!-- Trophy Icon -->
+            ${hasTrophy ? `
+              <span class="absolute right-2 text-sm" title="Sale made today!">🏆</span>
+            ` : ''}
           </div>
         </div>
       `;
@@ -156,6 +159,7 @@
       const avgCallTime = repData.avg_call_time || 0;
       const totalCallTime = repData.total_call_time || 0;
       const mtdSales = repData.sales_total || 0;
+      const hasSaleToday = repData.has_sale_today || false;
 
       repRow.innerHTML = `
         <div class="font-bold text-base text-[#33475B]">${repName}</div>
@@ -174,7 +178,7 @@
         </div>
         <div class="md:text-center">
           <span class="md:hidden text-xs font-bold text-[#7C98B6] uppercase">MTD Sales: </span>
-          ${renderMetric(`$${mtdSales.toLocaleString()}`, mtdSales, goals.sales)}
+          ${renderMetric(`$${mtdSales.toLocaleString()}`, mtdSales, goals.sales, hasSaleToday)}
         </div>
       `;
       leaderboardContainer.appendChild(repRow);
