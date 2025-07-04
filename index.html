@@ -127,7 +127,7 @@
       return `
         <div class="relative h-6 bg-[#EAF0F6] rounded-sm mt-6">
           ${percentage > 0 ? `
-            <div class="absolute bottom-full h-7 w-7 runner-animate" style="left: ${percentage}%; transform: translateX(-30%); margin-bottom: -2px;">
+            <div class="absolute bottom-full h-7 w-7 runner-animate" style="left: ${percentage}%; transform: translateX(-75%); margin-bottom: -2px;">
               <img src="obstacles.gif" alt="Runner" class="h-full w-full">
             </div>
           ` : ''}
@@ -210,7 +210,7 @@
             sales: rawGoals.sales_target || 0
         };
 
-        // --- ADDED: RENDER GOALS IN HEADER ---
+        // --- Render Goals in Header ---
         document.getElementById('total-calls-goal').textContent = `Goal: ${goals.calls}`;
         document.getElementById('avg-call-time-goal').textContent = `Goal: ${formatTime(goals.avg_call_time)}`;
         document.getElementById('total-call-time-goal').textContent = `Goal: ${formatTime(goals.total_call_time)}`;
