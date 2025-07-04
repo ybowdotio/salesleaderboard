@@ -19,7 +19,7 @@ export const handler = async (event, context) => {
   console.log(`🚀 Function triggered by a ${event.httpMethod} request. Starting sync...`);
 
   try {
-    const { data, error } = await supabase.rpc('sync_daily_stats_debug'); console.log('--- DEBUG OUTPUT ---'); console.log(data); console.log('--- END DEBUG ---');
+    const { error } = await supabase.rpc('sync_today_leaderboard_stats');
 
     if (error) {
       console.error('❌ Error calling Supabase function:', error);
