@@ -33,8 +33,9 @@ exports.handler = async () => {
             ]
           }
         ],
-        properties: ['dealname', 'amount', 'pipeline', 'dealstage', 'closedate'],
-        limit: 10
+        // ADDED 'hubspot_owner_id' TO THIS LIST
+        properties: ['dealname', 'amount', 'pipeline', 'dealstage', 'closedate', 'hubspot_owner_id'],
+        limit: 100 // Increased limit to fetch more deals if needed
       },
       { headers: HUBSPOT_HEADERS }
     );
@@ -47,18 +48,19 @@ exports.handler = async () => {
 
       const dealRecord = {
         hubspot_id: id,
+        hubspot_owner_id: properties.hubspot_owner_id || null, // ADD THIS
         dealname: properties.dealname || '',
         amount: parseFloat(properties.amount || 0),
         pipeline: properties.pipeline || '',
         dealstage: properties.dealstage || '',
         closedate: properties.closedate ? new Date(properties.closedate) : null,
-        synced_to_hubspot: false,
+        synced_to_hubspot: false, // This seems to be an internal flag, keeping as is
         last_synced_at: now
       };
 
       const { error } = await supabase
         .from('deals')
-        .upsert(dealRecord, { onConflict: ['hubspot_id'] });
+        .upsert(dealRecord, { onConflict: 'hubspot_id' }); // Corrected onConflict to use the column name
 
       if (!error) upserted++;
       else console.error(`❌ Upsert error for deal ${id}:`, error.message);
