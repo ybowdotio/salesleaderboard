@@ -12,9 +12,9 @@
   # Specifies the bundler to use for Node.js functions.
   node_bundler = "esbuild"
 
-# Schedules the syncDealsFinal function to run once an hour.
+# Schedules the syncDealsFinal function to run every minute.
 [functions.syncDealsFinal]
-  schedule = "@hourly"
+  schedule = "* * * * *"
 
 # FOR TESTING: Schedules the main call sync to run every minute.
 # NOTE: Change back to "4-59/5 * * * *" for production.
