@@ -6,50 +6,19 @@
   <title>Goldmine Sales Leaderboard</title>
   
   <script src="https://cdn.tailwindcss.com"></script>
-  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
   
   <style>
-    /* Custom styles inspired by the HubSpot aesthetic */
-    body {
-      font-family: 'Roboto', "Helvetica Neue", Helvetica, Arial, sans-serif;
-      background-color: #F5F8FA; /* HubSpot's primary background color */
-      color: #33475B; /* HubSpot's primary text color */
-    }
-
-    .bar-animate {
-      transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    
-    .runner-animate {
-      transition: left 1.5s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    /* Keyframe animation for the pulsing glow at the end of the bar */
+    body { font-family: 'Roboto', "Helvetica Neue", Helvetica, Arial, sans-serif; background-color: #F5F8FA; color: #33475B; }
+    .bar-animate { transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1); }
+    .runner-animate { transition: left 1.5s cubic-bezier(0.4, 0, 0.2, 1); }
     @keyframes pulse-glow-end {
-      0%, 100% {
-        box-shadow: 0 0 4px 2px rgba(255, 255, 255, 0.3);
-        opacity: 0.7;
-      }
-      50% {
-        box-shadow: 0 0 12px 6px rgba(255, 255, 255, 0.7);
-        opacity: 1;
-      }
+      0%, 100% { box-shadow: 0 0 4px 2px rgba(255, 255, 255, 0.3); opacity: 0.7; }
+      50% { box-shadow: 0 0 12px 6px rgba(255, 255, 255, 0.7); opacity: 1; }
     }
-
-    .goal-met-pulse::after {
-      content: '';
-      position: absolute;
-      top: 0;
-      right: 0;
-      width: 4px; /* Width of the glowing line */
-      height: 100%;
-      background-color: white;
-      border-radius: 2px;
-      animation: pulse-glow-end 2s infinite;
-    }
+    .goal-met-pulse::after { content: ''; position: absolute; top: 0; right: 0; width: 4px; height: 100%; background-color: white; border-radius: 2px; animation: pulse-glow-end 2s infinite; }
   </style>
 </head>
 <body class="p-4 sm:p-6 lg:p-8">
@@ -86,7 +55,7 @@
       <div id="loading-state" class="text-center py-12">
         <p class="text-gray-500">Loading leaderboard data...</p>
       </div>
-      </div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -94,20 +63,15 @@
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/utc.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/timezone.js"></script>
   <script>
-    // --- INITIALIZE DAYJS PLUGINS ---
     dayjs.extend(window.dayjs_plugin_utc);
     dayjs.extend(window.dayjs_plugin_timezone);
 
-    // --- CONFIGURATION ---
     const SUPABASE_URL = 'https://vmifmysnxolecfpidttr.supabase.co';  
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtaWZteXNueG9sZWNmcGlkdHRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEzODQ4NzksImV4cCI6MjA2Njk2MDg3OX0.3h-lHze2gA0y2Y3CCjPmAzyzI7Fe_FL3HCP0Tr4uMrU';
 
-    // --- INITIALIZATION ---
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const leaderboardContainer = document.getElementById('leaderboard-container');
     const loadingState = document.getElementById('loading-state');
-
-    // --- HELPER FUNCTIONS ---
 
     function formatTime(totalSeconds) {
       if (isNaN(totalSeconds) || totalSeconds < 0) return '00:00';
@@ -122,29 +86,15 @@
     function renderMetric(label, value, goal, hasTrophy = false) {
       const percentage = goal > 0 ? Math.min((value / goal) * 100, 100) : 0;
       const goalMet = goal > 0 && value >= goal;
-      const barColor = 'bg-[#00A4BD]'; // Uniform HubSpot blue/teal color
+      const barColor = 'bg-[#00A4BD]';
       
       return `
         <div class="relative h-6 bg-[#EAF0F6] rounded-sm mt-6">
-          ${percentage > 0 ? `
-            <div class="absolute bottom-full h-7 w-7 runner-animate" style="left: ${percentage}%; transform: translateX(-75%); margin-bottom: -2px;">
-              <img src="obstacles.gif" alt="Runner" class="h-full w-full">
-            </div>
-          ` : ''}
-          
-          <div class="absolute inset-0 flex items-center justify-center">
-            <span class="font-bold text-xs text-gray-600">${label}</span>
-          </div>
-
-          <div 
-            class="relative flex items-center justify-center h-full ${barColor} rounded-sm bar-animate overflow-hidden ${goalMet ? 'goal-met-pulse' : ''}" 
-            style="width: ${percentage}%;"
-          >
+          ${percentage > 0 ? `<div class="absolute bottom-full h-7 w-7 runner-animate" style="left: ${percentage}%; transform: translateX(-75%); margin-bottom: -2px;"><img src="obstacles.gif" alt="Runner" class="h-full w-full"></div>` : ''}
+          <div class="absolute inset-0 flex items-center justify-center"><span class="font-bold text-xs text-gray-600">${label}</span></div>
+          <div class="relative flex items-center justify-center h-full ${barColor} rounded-sm bar-animate overflow-hidden ${goalMet ? 'goal-met-pulse' : ''}" style="width: ${percentage}%;">
             <span class="font-bold text-xs text-white">${label}</span>
-            
-            ${hasTrophy ? `
-              <span class="absolute right-2 text-sm" title="Sale made today!">🏆</span>
-            ` : ''}
+            ${hasTrophy ? `<span class="absolute right-2 text-sm" title="Sale made today!">🏆</span>` : ''}
           </div>
         </div>
       `;
@@ -158,12 +108,12 @@
       const totalCalls = repData.total_outbound_calls || 0;
       const avgCallTime = repData.avg_call_time || 0;
       const totalCallTime = repData.total_call_time || 0;
-      const mtdSales = repData.sales_total || 0;
+      // *** CHANGED: Use the new month_to_date_sales column ***
+      const mtdSales = repData.month_to_date_sales || 0;
       const hasSaleToday = repData.has_sale_today || false;
 
       repRow.innerHTML = `
         <div class="font-bold text-base text-[#33475B]">${repName}</div>
-        
         <div class="md:text-center">
           <span class="md:hidden text-xs font-bold text-[#7C98B6] uppercase">Total Calls: </span>
           ${renderMetric(totalCalls.toLocaleString(), totalCalls, goals.calls)}
@@ -178,21 +128,19 @@
         </div>
         <div class="md:text-center">
           <span class="md:hidden text-xs font-bold text-[#7C98B6] uppercase">MTD Sales: </span>
-          ${renderMetric(`$${mtdSales.toLocaleString()}`, mtdSales, goals.sales, hasSaleToday)}
+          ${renderMetric(`$${mtdSales.toLocaleString()}`, hasSaleToday ? 1 : 0, 1, hasSaleToday)}
         </div>
       `;
       leaderboardContainer.appendChild(repRow);
     }
 
-    // --- MAIN FUNCTION ---
     async function loadLeaderboard() {
       try {
         const todayInChicago = dayjs().tz('America/Chicago').format('YYYY-MM-DD');
 
-        // Fetch goals and stats data in parallel for efficiency
         const [goalsResponse, statsResponse] = await Promise.all([
           supabase.from('daily_goals').select('*').eq('id', 'global-goals').single(),
-          supabase.from('today_leaderboard_stats').select('*').eq('log_date', todayInChicago).order('total_outbound_calls', { ascending: false })
+          supabase.from('today_leaderboard_stats').select('*').eq('log_date', todayInChicago).order('month_to_date_sales', { ascending: false })
         ]);
 
         if (goalsResponse.error) throw goalsResponse.error;
@@ -201,25 +149,23 @@
         const rawGoals = goalsResponse.data || {};
         const stats = statsResponse.data || [];
         
-        // Map the database column names to the names the script expects
         const goals = {
             calls: rawGoals.target_calls || 0,
-            // Convert Total Call Time goal from minutes to seconds
             total_call_time: (rawGoals.total_call_time || 0) * 60,
             avg_call_time: rawGoals.avg_call_time || 0,
             sales: rawGoals.sales_target || 0
         };
 
-        // --- Render Goals in Header ---
         document.getElementById('total-calls-goal').textContent = `Goal: ${goals.calls}`;
         document.getElementById('avg-call-time-goal').textContent = `Goal: ${formatTime(goals.avg_call_time)}`;
         document.getElementById('total-call-time-goal').textContent = `Goal: ${formatTime(goals.total_call_time)}`;
-        document.getElementById('mtd-sales-goal').textContent = `Goal: $${goals.sales.toLocaleString()}`;
+        // *** CHANGED: Set static text for the sales goal header ***
+        document.getElementById('mtd-sales-goal').textContent = 'Goal: 1 Sale';
 
         leaderboardContainer.innerHTML = '';
 
         if (stats.length === 0) {
-          leaderboardContainer.innerHTML = '<p class="text-center py-12 text-gray-500">No call data yet for today.</p>';
+          leaderboardContainer.innerHTML = '<p class="text-center py-12 text-gray-500">No activity yet for today.</p>';
           return;
         }
 
@@ -231,9 +177,7 @@
       }
     }
 
-    // --- INITIAL LOAD ---
     loadLeaderboard();
-
   </script>
 </body>
 </html>
