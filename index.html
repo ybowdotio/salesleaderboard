@@ -5,10 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Goldmine Sales Leaderboard</title>
   
-  <!-- Tailwind CSS for modern styling -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- Google Fonts - Using a font that closely matches HubSpot's UI -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
@@ -57,7 +55,6 @@
 <body class="p-4 sm:p-6 lg:p-8">
 
   <div class="max-w-7xl mx-auto">
-    <!-- Header Section -->
     <header class="flex justify-between items-center mb-8">
       <h1 class="text-2xl sm:text-3xl font-bold text-[#0E1E2D]">Goldmine Sales Leaderboard</h1>
       <a href="goalsSettings.html" target="_blank" class="px-4 py-2 bg-[#FF7A59] text-white font-bold rounded-sm shadow-sm hover:bg-[#E86143] transition-colors duration-300 text-sm">
@@ -65,23 +62,31 @@
       </a>
     </header>
 
-    <!-- Column Headers -->
     <div class="hidden md:grid grid-cols-5 gap-6 px-6 py-3 text-left text-xs font-bold text-[#7C98B6] uppercase tracking-wider">
       <div>Sales Rep</div>
-      <div class="text-center">Total Calls</div>
-      <div class="text-center">Avg Call Time</div>
-      <div class="text-center">Total Call Time</div>
-      <div class="text-center">Month To Date Sales</div>
+      <div class="text-center">
+        <div>Total Calls</div>
+        <div id="total-calls-goal" class="text-xs text-gray-400 font-normal normal-case"></div>
+      </div>
+      <div class="text-center">
+        <div>Avg Call Time</div>
+        <div id="avg-call-time-goal" class="text-xs text-gray-400 font-normal normal-case"></div>
+      </div>
+      <div class="text-center">
+        <div>Total Call Time</div>
+        <div id="total-call-time-goal" class="text-xs text-gray-400 font-normal normal-case"></div>
+      </div>
+      <div class="text-center">
+        <div>Month To Date Sales</div>
+        <div id="mtd-sales-goal" class="text-xs text-gray-400 font-normal normal-case"></div>
+      </div>
     </div>
 
-    <!-- Leaderboard Container -->
     <div id="leaderboard-container" class="space-y-4">
-      <!-- Loading State -->
       <div id="loading-state" class="text-center py-12">
         <p class="text-gray-500">Loading leaderboard data...</p>
       </div>
-      <!-- Leaderboard rows will be inserted here by JavaScript -->
-    </div>
+      </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -94,7 +99,7 @@
     dayjs.extend(window.dayjs_plugin_timezone);
 
     // --- CONFIGURATION ---
-    const SUPABASE_URL = 'https://vmifmysnxolecfpidttr.supabase.co'; 
+    const SUPABASE_URL = 'https://vmifmysnxolecfpidttr.supabase.co';  
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtaWZteXNueG9sZWNmcGlkdHRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEzODQ4NzksImV4cCI6MjA2Njk2MDg3OX0.3h-lHze2gA0y2Y3CCjPmAzyzI7Fe_FL3HCP0Tr4uMrU';
 
     // --- INITIALIZATION ---
@@ -121,27 +126,22 @@
       
       return `
         <div class="relative h-6 bg-[#EAF0F6] rounded-sm mt-6">
-          <!-- Runner Icon -->
           ${percentage > 0 ? `
             <div class="absolute bottom-full h-7 w-7 runner-animate" style="left: ${percentage}%; transform: translateX(-30%); margin-bottom: -2px;">
               <img src="obstacles.gif" alt="Runner" class="h-full w-full">
             </div>
           ` : ''}
           
-          <!-- Dark text label (sits on the gray background) -->
           <div class="absolute inset-0 flex items-center justify-center">
             <span class="font-bold text-xs text-gray-600">${label}</span>
           </div>
 
-          <!-- Colored progress bar -->
           <div 
             class="relative flex items-center justify-center h-full ${barColor} rounded-sm bar-animate overflow-hidden ${goalMet ? 'goal-met-pulse' : ''}" 
             style="width: ${percentage}%;"
           >
-            <!-- White text label (sits inside the colored bar and is revealed as it grows) -->
             <span class="font-bold text-xs text-white">${label}</span>
             
-            <!-- Trophy Icon -->
             ${hasTrophy ? `
               <span class="absolute right-2 text-sm" title="Sale made today!">🏆</span>
             ` : ''}
@@ -209,6 +209,12 @@
             avg_call_time: rawGoals.avg_call_time || 0,
             sales: rawGoals.sales_target || 0
         };
+
+        // --- ADDED: RENDER GOALS IN HEADER ---
+        document.getElementById('total-calls-goal').textContent = `Goal: ${goals.calls}`;
+        document.getElementById('avg-call-time-goal').textContent = `Goal: ${formatTime(goals.avg_call_time)}`;
+        document.getElementById('total-call-time-goal').textContent = `Goal: ${formatTime(goals.total_call_time)}`;
+        document.getElementById('mtd-sales-goal').textContent = `Goal: $${goals.sales.toLocaleString()}`;
 
         leaderboardContainer.innerHTML = '';
 
