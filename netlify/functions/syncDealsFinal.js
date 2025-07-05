@@ -1,5 +1,11 @@
 const axios = require('axios');
 const { createClient } = require('@supabase/supabase-js');
+const dayjs = require('dayjs');
+const utc = require('dayjs/plugin/utc');
+const timezone = require('dayjs/plugin/timezone');
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -8,10 +14,8 @@ const supabase = createClient(
 
 exports.handler = async () => {
   try {
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-    const isoStart = startOfMonth.toISOString();
+    // --- THIS IS THE LINE THAT WAS CHANGED ---
+    const isoStart = dayjs().tz('America/Chicago').startOf('month').toISOString();
     const now = new Date().toISOString();
 
     const HUBSPOT_HEADERS = {
@@ -24,7 +28,7 @@ exports.handler = async () => {
     let hasMore = false;
     let totalFetched = 0;
 
-    console.log('🚀 Starting HubSpot deal sync for Closed Won deals...');
+    console.log(`🚀 Starting HubSpot deal sync for deals closed since ${isoStart}...`);
 
     do {
       const response = await axios.post(
@@ -38,7 +42,6 @@ exports.handler = async () => {
                   operator: 'GTE',
                   value: isoStart
                 },
-                // --- THIS IS THE NEW, CORRECT FILTER ---
                 {
                   propertyName: 'hs_deal_stage_probability',
                   operator: 'EQ',
@@ -47,7 +50,6 @@ exports.handler = async () => {
               ]
             }
           ],
-          // We don't need to fetch the probability, just filter by it.
           properties: ['dealname', 'amount', 'pipeline', 'dealstage', 'closedate', 'hubspot_owner_id'],
           limit: 100,
           after: after
