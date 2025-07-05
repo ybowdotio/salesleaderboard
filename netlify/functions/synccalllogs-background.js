@@ -3,116 +3,91 @@ const dayjs = require('dayjs');
 const utc = require('dayjs/plugin/utc');
 const timezone = require('dayjs/plugin/timezone');
 
+// Initialize dayjs with necessary plugins
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 exports.handler = async () => {
-  const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!HUBSPOT_PRIVATE_APP_TOKEN || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: 'Missing critical environment variables' }),
-    };
-  }
-
-  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const syncSource = 'calls_timestamp_cursor_v2';
-  let totalProcessed = 0;
-
   try {
-    const { data: cursorData, error: cursorError } = await supabase
-      .from('sync_cursor')
-      .select('cursor')
-      .eq('source', syncSource)
-      .single();
-
-    if (cursorError && cursorError.code !== 'PGRST116') {
-      throw new Error(`Failed to retrieve sync cursor: ${cursorError.message}`);
-    }
-    
+    const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
     const now = dayjs().tz('America/Chicago');
     const startOfMonth = now.startOf('month').toISOString();
-    const endOfMonth = now.endOf('month').toISOString();
-
-    let nextCursor = cursorData?.cursor || startOfMonth;
-    let lastProcessedIds = [];
-
+    
+    let allCalls = [];
+    let after = null;
     let hasMore = true;
-    while(hasMore) {
-      const hsUrl = 'https://api.hubapi.com/crm/v3/objects/calls/search';
-      
-      // --- THE FIX IS HERE ---
-      // Start with the base filters that are always present.
-      const filters = [
-        { propertyName: 'hs_timestamp', operator: 'GTE', value: nextCursor },
-        { propertyName: 'hs_timestamp', operator: 'LTE', value: endOfMonth }
-      ];
 
-      // Conditionally add the NOT_IN filter only if the list is not empty.
-      if (lastProcessedIds.length > 0) {
-        filters.push({
-            propertyName: 'hs_object_id',
-            operator: 'NOT_IN',
-            values: lastProcessedIds
-        });
+    console.log('🚀 Starting HubSpot call sync...');
+
+    // Loop to handle HubSpot API pagination
+    do {
+      const response = await fetch('https://api.hubapi.com/crm/v3/objects/calls/search', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          filterGroups: [{
+            filters: [
+              { propertyName: 'hs_timestamp', operator: 'GTE', value: startOfMonth }
+            ]
+          }],
+          sorts: [{ propertyName: 'hs_timestamp', direction: 'ASCENDING' }],
+          properties: ['hs_timestamp', 'hubspot_owner_id', 'hs_call_duration'],
+          limit: 100,
+          after: after // This tells HubSpot which page to get
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HubSpot API Error: ${await response.text()}`);
       }
-      
-      const requestBody = {
-        filterGroups: [{ filters: filters }], // Use the dynamically built filters array
-        sorts: [{ propertyName: 'hs_timestamp', direction: 'ASCENDING' }],
-        properties: [ 'hs_timestamp', 'hubspot_owner_id', 'hs_call_duration', 'hs_call_from_number', 'hs_call_to_number', 'hs_call_disposition', 'hs_call_body' ],
-        limit: 100
-      };
-      // --- END OF FIX ---
-
-      const response = await fetch(hsUrl, { method: 'POST', headers: { 'Authorization': `Bearer ${HUBSPOT_PRIVATE_APP_TOKEN}`, 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) });
-      if (!response.ok) { throw new Error(`HubSpot API Error: ${await response.text()}`); }
 
       const json = await response.json();
-      const calls = json.results || [];
+      const callsOnPage = json.results || [];
+      allCalls = allCalls.concat(callsOnPage);
 
-      if (calls.length > 0) {
-        const rows = calls.map(call => ({ call_id: call.id, timestamp_iso: call.properties.hs_timestamp, rep_id: call.properties.hubspot_owner_id || null, duration_seconds: Math.round(parseInt(call.properties.hs_call_duration || '0', 10) / 1000), from_number: call.properties.hs_call_from_number || null, to_number: call.properties.hs_call_to_number || null, disposition: call.properties.hs_call_disposition || null, body: call.properties.hs_call_body || null, }));
-        const { error: insertError } = await supabase.from('calls').upsert(rows, { onConflict: 'call_id' });
-        if (insertError) { throw new Error(`Supabase insert error on batch: ${insertError.message}`); }
-        
-        totalProcessed += rows.length;
-        
-        const newCursor = calls[calls.length - 1].properties.hs_timestamp;
-
-        if (newCursor === nextCursor) {
-            lastProcessedIds.push(...calls.map(c => c.id));
-        } else {
-            lastProcessedIds = calls.map(c => c.id);
-        }
-
-        nextCursor = newCursor;
-        
-        const { error: updateCursorError } = await supabase.from('sync_cursor').upsert( { source: syncSource, cursor: nextCursor, updated_at: new Date().toISOString() }, { onConflict: 'source' } );
-        if (updateCursorError) { console.error('Failed to update sync_cursor:', updateCursorError.message); }
-
-        if (calls.length < 100) {
-          hasMore = false;
-        } else {
-          await sleep(1000);
-        }
+      // Check for the next page using HubSpot's paging object
+      if (json.paging && json.paging.next) {
+        hasMore = true;
+        after = json.paging.next.after;
       } else {
         hasMore = false;
       }
+
+    } while (hasMore);
+
+    console.log(`✅ Fetched a total of ${allCalls.length} calls from HubSpot for the month.`);
+
+    if (allCalls.length > 0) {
+      // Clear the table before inserting fresh data
+      console.log('Clearing old calls from Supabase table...');
+      const { error: deleteError } = await supabase.from('calls').delete().gte('timestamp_iso', startOfMonth);
+      if (deleteError) throw deleteError;
+      console.log('✅ Monthly call data cleared.');
+
+      const rows = allCalls.map(call => ({
+        call_id: call.id,
+        timestamp_iso: call.properties.hs_timestamp,
+        rep_id: call.properties.hubspot_owner_id || null,
+        duration_seconds: Math.round(parseInt(call.properties.hs_call_duration || '0', 10) / 1000)
+      }));
+
+      const { error: insertError } = await supabase.from('calls').upsert(rows, { onConflict: 'call_id' });
+      if (insertError) throw insertError;
+      
+      console.log(`✅ Synced ${rows.length} calls to Supabase.`);
     }
 
     return {
       statusCode: 200,
-      body: JSON.stringify({
-        success: true,
-        inserted: totalProcessed,
-        message: `Sync complete for ${now.format('MMMM YYYY')}. Processed ${totalProcessed} calls.`,
-      }),
+      body: JSON.stringify({ success: true, message: `Sync complete. Processed ${allCalls.length} calls.` }),
     };
 
   } catch (err) {
