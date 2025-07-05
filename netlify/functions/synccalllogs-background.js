@@ -12,6 +12,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// ADDED: Sleep function to handle rate limiting
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 exports.handler = async () => {
   try {
     const HUBSPOT_PRIVATE_APP_TOKEN = process.env.HUBSPOT_PRIVATE_APP_TOKEN;
@@ -24,7 +27,6 @@ exports.handler = async () => {
 
     console.log('🚀 Starting HubSpot call sync...');
 
-    // Loop to handle HubSpot API pagination
     do {
       const response = await fetch('https://api.hubapi.com/crm/v3/objects/calls/search', {
         method: 'POST',
@@ -41,7 +43,7 @@ exports.handler = async () => {
           sorts: [{ propertyName: 'hs_timestamp', direction: 'ASCENDING' }],
           properties: ['hs_timestamp', 'hubspot_owner_id', 'hs_call_duration'],
           limit: 100,
-          after: after // This tells HubSpot which page to get
+          after: after
         })
       });
 
@@ -53,10 +55,11 @@ exports.handler = async () => {
       const callsOnPage = json.results || [];
       allCalls = allCalls.concat(callsOnPage);
 
-      // Check for the next page using HubSpot's paging object
       if (json.paging && json.paging.next) {
         hasMore = true;
         after = json.paging.next.after;
+        // ADDED: Pause before the next API call
+        await sleep(350); 
       } else {
         hasMore = false;
       }
@@ -66,7 +69,6 @@ exports.handler = async () => {
     console.log(`✅ Fetched a total of ${allCalls.length} calls from HubSpot for the month.`);
 
     if (allCalls.length > 0) {
-      // Clear the table before inserting fresh data
       console.log('Clearing old calls from Supabase table...');
       const { error: deleteError } = await supabase.from('calls').delete().gte('timestamp_iso', startOfMonth);
       if (deleteError) throw deleteError;
