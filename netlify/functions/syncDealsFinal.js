@@ -24,9 +24,8 @@ exports.handler = async () => {
     let hasMore = false;
     let totalFetched = 0;
 
-    console.log('🚀 Starting HubSpot deal sync...');
+    console.log('🚀 Starting HubSpot deal sync for Closed Won deals...');
 
-    // --- ADDED: Loop to handle HubSpot API pagination ---
     do {
       const response = await axios.post(
         'https://api.hubapi.com/crm/v3/objects/deals/search',
@@ -35,16 +34,23 @@ exports.handler = async () => {
             {
               filters: [
                 {
-                  propertyName: 'closedate', // Correctly filter by the date a deal was closed
+                  propertyName: 'closedate',
                   operator: 'GTE',
                   value: isoStart
+                },
+                // --- THIS IS THE NEW, CORRECT FILTER ---
+                {
+                  propertyName: 'hs_deal_stage_probability',
+                  operator: 'EQ',
+                  value: 1 
                 }
               ]
             }
           ],
+          // We don't need to fetch the probability, just filter by it.
           properties: ['dealname', 'amount', 'pipeline', 'dealstage', 'closedate', 'hubspot_owner_id'],
           limit: 100,
-          after: after // This tells HubSpot which page to get
+          after: after
         },
         { headers: HUBSPOT_HEADERS }
       );
@@ -53,7 +59,6 @@ exports.handler = async () => {
       allDeals = allDeals.concat(dealsOnPage);
       totalFetched += dealsOnPage.length;
 
-      // Check if there is a next page
       if (response.data.paging && response.data.paging.next) {
         hasMore = true;
         after = response.data.paging.next.after;
@@ -63,7 +68,7 @@ exports.handler = async () => {
 
     } while (hasMore);
 
-    console.log(`✅ Fetched a total of ${totalFetched} deals from HubSpot.`);
+    console.log(`✅ Fetched a total of ${totalFetched} "Closed Won" deals from HubSpot.`);
 
     let upserted = 0;
 
@@ -101,7 +106,6 @@ exports.handler = async () => {
       })
     };
   } catch (err) {
-    // Log the full error from HubSpot if available
     if (err.response) {
       console.error('HubSpot API Error:', err.response.data);
     }
