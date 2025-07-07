@@ -108,7 +108,6 @@
       const totalCalls = repData.total_outbound_calls || 0;
       const avgCallTime = repData.avg_call_time || 0;
       const totalCallTime = repData.total_call_time || 0;
-      // *** CHANGED: Use the new month_to_date_sales column ***
       const mtdSales = repData.month_to_date_sales || 0;
       const hasSaleToday = repData.has_sale_today || false;
 
@@ -156,11 +155,16 @@
             sales: rawGoals.sales_target || 0
         };
 
+        // --- THIS SECTION HAS BEEN CHANGED ---
+        // 1. Calculate the total MTD sales from all reps
+        const totalMtdSales = stats.reduce((sum, rep) => sum + (rep.month_to_date_sales || 0), 0);
+
+        // 2. Update the header goals
         document.getElementById('total-calls-goal').textContent = `Goal: ${goals.calls}`;
         document.getElementById('avg-call-time-goal').textContent = `Goal: ${formatTime(goals.avg_call_time)}`;
         document.getElementById('total-call-time-goal').textContent = `Goal: ${formatTime(goals.total_call_time)}`;
-        // *** CHANGED: Set static text for the sales goal header ***
-        document.getElementById('mtd-sales-goal').textContent = 'Goal: 1 Sale';
+        document.getElementById('mtd-sales-goal').textContent = `Goal: 1 Sale | Total: $${totalMtdSales.toLocaleString()}`;
+
 
         leaderboardContainer.innerHTML = '';
 
@@ -177,7 +181,10 @@
       }
     }
 
+    // --- INITIAL LOAD & REFRESH LOGIC ---
     loadLeaderboard();
+    setInterval(loadLeaderboard, 60000);
+
   </script>
 </body>
 </html>
