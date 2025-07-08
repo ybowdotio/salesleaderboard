@@ -83,18 +83,22 @@
       return `${pad(minutes)}:${pad(seconds)}`;
     }
     
-    function renderMetric(label, value, goal, hasTrophy = false) {
+    // *** CHANGED: The 'hasTrophy' parameter is now 'trophyCount' ***
+    function renderMetric(label, value, goal, trophyCount = 0) {
       const percentage = goal > 0 ? Math.min((value / goal) * 100, 100) : 0;
       const goalMet = goal > 0 && value >= goal;
       const barColor = 'bg-[#00A4BD]';
       
+      // *** CHANGED: Use repeat() to generate multiple trophies ***
+      const trophies = trophyCount > 0 ? `<span class="absolute right-2 text-sm whitespace-nowrap" title="${trophyCount} sale(s) today!">${'🏆'.repeat(trophyCount)}</span>` : '';
+
       return `
         <div class="relative h-6 bg-[#EAF0F6] rounded-sm mt-6">
           ${percentage > 0 ? `<div class="absolute bottom-full h-7 w-7 runner-animate" style="left: ${percentage}%; transform: translateX(-75%); margin-bottom: -2px;"><img src="obstacles.gif" alt="Runner" class="h-full w-full"></div>` : ''}
           <div class="absolute inset-0 flex items-center justify-center"><span class="font-bold text-xs text-gray-600">${label}</span></div>
           <div class="relative flex items-center justify-center h-full ${barColor} rounded-sm bar-animate overflow-hidden ${goalMet ? 'goal-met-pulse' : ''}" style="width: ${percentage}%;">
             <span class="font-bold text-xs text-white">${label}</span>
-            ${hasTrophy ? `<span class="absolute right-2 text-sm" title="Sale made today!">🏆</span>` : ''}
+            ${trophies}
           </div>
         </div>
       `;
@@ -110,6 +114,8 @@
       const totalCallTime = repData.total_call_time || 0;
       const mtdSales = repData.month_to_date_sales || 0;
       const hasSaleToday = repData.has_sale_today || false;
+      // *** CHANGED: Get the new deals_closed_today value ***
+      const dealsClosedToday = repData.deals_closed_today || 0;
 
       repRow.innerHTML = `
         <div class="font-bold text-base text-[#33475B]">${repName}</div>
@@ -127,7 +133,7 @@
         </div>
         <div class="md:text-center">
           <span class="md:hidden text-xs font-bold text-[#7C98B6] uppercase">MTD Sales: </span>
-          ${renderMetric(`$${mtdSales.toLocaleString()}`, hasSaleToday ? 1 : 0, 1, hasSaleToday)}
+          ${renderMetric(`$${mtdSales.toLocaleString()}`, hasSaleToday ? 1 : 0, 1, dealsClosedToday)}
         </div>
       `;
       leaderboardContainer.appendChild(repRow);
@@ -155,11 +161,8 @@
             sales: rawGoals.sales_target || 0
         };
 
-        // --- THIS SECTION HAS BEEN CHANGED ---
-        // 1. Calculate the total MTD sales from all reps
         const totalMtdSales = stats.reduce((sum, rep) => sum + (rep.month_to_date_sales || 0), 0);
-
-        // 2. Update the header goals
+        
         document.getElementById('total-calls-goal').textContent = `Goal: ${goals.calls}`;
         document.getElementById('avg-call-time-goal').textContent = `Goal: ${formatTime(goals.avg_call_time)}`;
         document.getElementById('total-call-time-goal').textContent = `Goal: ${formatTime(goals.total_call_time)}`;
