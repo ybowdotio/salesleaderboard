@@ -16,7 +16,25 @@ exports.handler = async () => {
   try {
     // --- THIS IS THE LINE THAT WAS CHANGED ---
     const isoStart = dayjs().tz('America/Chicago').startOf('month').toISOString();
-    const contactsStartDate = dayjs().tz('America/Chicago').subtract(60, 'days').toISOString();
+    
+    // For initial load: fetch 60 days of contacts
+    // For ongoing sync: only fetch contacts modified in last 24 hours
+    const { data: lastSync } = await supabase
+      .from('b_sync_logs')
+      .select('created_at')
+      .eq('function_name', 'syncDealsFinal')
+      .eq('status', 'success')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    const isInitialLoad = !lastSync;
+    const contactsStartDate = isInitialLoad 
+      ? dayjs().tz('America/Chicago').subtract(60, 'days').toISOString()
+      : dayjs().tz('America/Chicago').subtract(24, 'hours').toISOString();
+    
+    console.log(`📋 Contact sync mode: ${isInitialLoad ? 'INITIAL (60 days)' : 'INCREMENTAL (24 hours)'}`);
+    
     const now = new Date().toISOString();
 
     const HUBSPOT_HEADERS = {
@@ -34,6 +52,9 @@ exports.handler = async () => {
     let totalContactsFetched = 0;
 
     console.log(`🚀 Starting HubSpot sync for deals and contacts...`);
+
+    // Helper function to add delay between API calls
+    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     // DEALS SYNC
     do {
@@ -74,11 +95,19 @@ exports.handler = async () => {
         hasMoreDeals = false;
       }
 
+      // Add delay to avoid rate limits
+      if (hasMoreDeals) {
+        await delay(200); // 200ms delay between paginated deal requests
+      }
+
     } while (hasMoreDeals);
 
     console.log(`✅ Fetched ${totalDealsFetched} deals from HubSpot.`);
 
-    // CONTACTS SYNC
+    // Add delay before starting contacts sync to avoid rate limits
+    await delay(1000);
+
+    // CONTACTS SYNC - Reduce batch size for contacts due to higher volume
     do {
       const contactsResponse = await axios.post(
         'https://api.hubapi.com/crm/v3/objects/contacts/search',
@@ -87,7 +116,7 @@ exports.handler = async () => {
             {
               filters: [
                 {
-                  propertyName: 'createdate',
+                  propertyName: isInitialLoad ? 'createdate' : 'lastmodifieddate',
                   operator: 'GTE',
                   value: contactsStartDate
                 },
@@ -103,7 +132,7 @@ exports.handler = async () => {
             'createdate', 'hs_lead_status', 'lifecyclestage', 'hs_analytics_source',
             'hubspot_owner_assigneddate'
           ],
-          limit: 100,
+          limit: 50,
           after: contactAfter
         },
         { headers: HUBSPOT_HEADERS }
@@ -118,6 +147,11 @@ exports.handler = async () => {
         contactAfter = contactsResponse.data.paging.next.after;
       } else {
         hasMoreContacts = false;
+      }
+
+      // Add delay between contact pagination requests
+      if (hasMoreContacts) {
+        await delay(500); // 500ms delay for contact requests (more conservative)
       }
 
     } while (hasMoreContacts);
@@ -184,13 +218,25 @@ exports.handler = async () => {
       }
     }
 
+    // Log successful sync
+    const successMessage = `✅ Synced ${dealsUpserted}/${totalDealsFetched} deals and ${contactsUpserted}/${totalContactsFetched} contacts to Supabase.`;
+    
+    await supabase.from('b_sync_logs').insert({
+      id: require('crypto').randomUUID(),
+      function_name: 'syncDealsFinal',
+      status: 'success',
+      message: successMessage,
+      created_at: now
+    });
+
     return {
       statusCode: 200,
       body: JSON.stringify({
-        message: `✅ Synced ${dealsUpserted}/${totalDealsFetched} deals and ${contactsUpserted}/${totalContactsFetched} contacts to Supabase.`,
+        message: successMessage,
         timestamp: now,
         deals_synced: dealsUpserted,
-        contacts_synced: contactsUpserted
+        contacts_synced: contactsUpserted,
+        sync_mode: isInitialLoad ? 'initial' : 'incremental'
       })
     };
   } catch (err) {
