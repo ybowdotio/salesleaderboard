@@ -16,6 +16,7 @@ exports.handler = async () => {
   try {
     // --- THIS IS THE LINE THAT WAS CHANGED ---
     const isoStart = dayjs().tz('America/Chicago').startOf('month').toISOString();
+    const contactsStartDate = dayjs().tz('America/Chicago').subtract(60, 'days').toISOString();
     const now = new Date().toISOString();
 
     const HUBSPOT_HEADERS = {
@@ -24,14 +25,19 @@ exports.handler = async () => {
     };
     
     let allDeals = [];
-    let after = null;
-    let hasMore = false;
-    let totalFetched = 0;
+    let allContacts = [];
+    let dealAfter = null;
+    let contactAfter = null;
+    let hasMoreDeals = false;
+    let hasMoreContacts = false;
+    let totalDealsFetched = 0;
+    let totalContactsFetched = 0;
 
-    console.log(`🚀 Starting HubSpot deal sync for deals closed since ${isoStart}...`);
+    console.log(`🚀 Starting HubSpot sync for deals and contacts...`);
 
+    // DEALS SYNC
     do {
-      const response = await axios.post(
+      const dealsResponse = await axios.post(
         'https://api.hubapi.com/crm/v3/objects/deals/search',
         {
           filterGroups: [
@@ -52,27 +58,74 @@ exports.handler = async () => {
           ],
           properties: ['dealname', 'amount', 'pipeline', 'dealstage', 'closedate', 'hubspot_owner_id'],
           limit: 100,
-          after: after
+          after: dealAfter
         },
         { headers: HUBSPOT_HEADERS }
       );
 
-      const dealsOnPage = response.data.results || [];
+      const dealsOnPage = dealsResponse.data.results || [];
       allDeals = allDeals.concat(dealsOnPage);
-      totalFetched += dealsOnPage.length;
+      totalDealsFetched += dealsOnPage.length;
 
-      if (response.data.paging && response.data.paging.next) {
-        hasMore = true;
-        after = response.data.paging.next.after;
+      if (dealsResponse.data.paging && dealsResponse.data.paging.next) {
+        hasMoreDeals = true;
+        dealAfter = dealsResponse.data.paging.next.after;
       } else {
-        hasMore = false;
+        hasMoreDeals = false;
       }
 
-    } while (hasMore);
+    } while (hasMoreDeals);
 
-    console.log(`✅ Fetched a total of ${totalFetched} "Closed Won" deals from HubSpot.`);
+    console.log(`✅ Fetched ${totalDealsFetched} deals from HubSpot.`);
 
-    let upserted = 0;
+    // CONTACTS SYNC
+    do {
+      const contactsResponse = await axios.post(
+        'https://api.hubapi.com/crm/v3/objects/contacts/search',
+        {
+          filterGroups: [
+            {
+              filters: [
+                {
+                  propertyName: 'createdate',
+                  operator: 'GTE',
+                  value: contactsStartDate
+                },
+                {
+                  propertyName: 'invalid_lead',
+                  operator: 'NOT_HAS_PROPERTY'
+                }
+              ]
+            }
+          ],
+          properties: [
+            'firstname', 'lastname', 'email', 'phone', 'hubspot_owner_id',
+            'createdate', 'hs_lead_status', 'lifecyclestage', 'hs_analytics_source',
+            'hubspot_owner_assigneddate'
+          ],
+          limit: 100,
+          after: contactAfter
+        },
+        { headers: HUBSPOT_HEADERS }
+      );
+
+      const contactsOnPage = contactsResponse.data.results || [];
+      allContacts = allContacts.concat(contactsOnPage);
+      totalContactsFetched += contactsOnPage.length;
+
+      if (contactsResponse.data.paging && contactsResponse.data.paging.next) {
+        hasMoreContacts = true;
+        contactAfter = contactsResponse.data.paging.next.after;
+      } else {
+        hasMoreContacts = false;
+      }
+
+    } while (hasMoreContacts);
+
+    console.log(`✅ Fetched ${totalContactsFetched} contacts from HubSpot.`);
+
+    // SYNC DEALS TO SUPABASE
+    let dealsUpserted = 0;
 
     for (const deal of allDeals) {
       const { id, properties } = deal;
@@ -94,17 +147,50 @@ exports.handler = async () => {
         .upsert(dealRecord, { onConflict: 'hubspot_id' });
 
       if (!error) {
-        upserted++;
+        dealsUpserted++;
       } else {
-        console.error(`❌ Upsert error for deal ${id}:`, error.message);
+        console.error(`❌ Deal upsert error for ${id}:`, error.message);
+      }
+    }
+
+    // SYNC CONTACTS TO SUPABASE
+    let contactsUpserted = 0;
+    for (const contact of allContacts) {
+      const { id, properties } = contact;
+
+      const contactRecord = {
+        hubspot_id: id,
+        firstname: properties.firstname || '',
+        lastname: properties.lastname || '',
+        email: properties.email || '',
+        phone: properties.phone || '',
+        owner_id: properties.hubspot_owner_id || null,
+        hubspot_created_date: properties.createdate ? new Date(properties.createdate) : null,
+        owner_assigned_date: properties.hubspot_owner_assigneddate ? new Date(properties.hubspot_owner_assigneddate) : null,
+        lead_status: properties.hs_lead_status || '',
+        lifecycle_stage: properties.lifecyclestage || '',
+        synced_to_hubspot: false,
+        last_synced_at: now
+      };
+
+      const { error } = await supabase
+        .from('contacts')
+        .upsert(contactRecord, { onConflict: 'hubspot_id' });
+
+      if (!error) {
+        contactsUpserted++;
+      } else {
+        console.error(`❌ Contact upsert error for ${id}:`, error.message);
       }
     }
 
     return {
       statusCode: 200,
       body: JSON.stringify({
-        message: `✅ Synced ${upserted} of ${totalFetched} deals to Supabase.`,
-        timestamp: now
+        message: `✅ Synced ${dealsUpserted}/${totalDealsFetched} deals and ${contactsUpserted}/${totalContactsFetched} contacts to Supabase.`,
+        timestamp: now,
+        deals_synced: dealsUpserted,
+        contacts_synced: contactsUpserted
       })
     };
   } catch (err) {
