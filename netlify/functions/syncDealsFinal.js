@@ -19,6 +19,15 @@ exports.handler = async () => {
     
     // For initial load: fetch 60 days of contacts
     // For ongoing sync: only fetch contacts modified in last 24 hours
+    
+    // Check contact count to determine if we need full resync
+    const { data: contactCount } = await supabase
+      .from('b_contacts')
+      .select('count(*)', { count: 'exact' });
+    
+    // Force initial load if we have suspiciously few contacts (like 300)
+    const forceInitialLoad = (contactCount?.[0]?.count || 0) < 1000;
+    
     const { data: lastSync } = await supabase
       .from('b_sync_logs')
       .select('created_at')
@@ -28,12 +37,12 @@ exports.handler = async () => {
       .limit(1)
       .single();
     
-    const isInitialLoad = !lastSync;
+    const isInitialLoad = !lastSync || forceInitialLoad;
     const contactsStartDate = isInitialLoad 
       ? dayjs().tz('America/Chicago').subtract(60, 'days').toISOString()
       : dayjs().tz('America/Chicago').subtract(24, 'hours').toISOString();
     
-    console.log(`📋 Contact sync mode: ${isInitialLoad ? 'INITIAL (60 days)' : 'INCREMENTAL (24 hours)'}`);
+    console.log(`📋 Contact sync mode: ${isInitialLoad ? 'INITIAL (60 days)' : 'INCREMENTAL (24 hours)'} ${forceInitialLoad ? '[FORCED]' : ''}`);
     
     const now = new Date().toISOString();
 
@@ -107,56 +116,137 @@ exports.handler = async () => {
     // Add delay before starting contacts sync to avoid rate limits
     await delay(1000);
 
-    // CONTACTS SYNC - Reduce batch size for contacts due to higher volume
-    do {
-      const contactsResponse = await axios.post(
-        'https://api.hubapi.com/crm/v3/objects/contacts/search',
-        {
-          filterGroups: [
-            {
-              filters: [
-                {
-                  propertyName: isInitialLoad ? 'createdate' : 'lastmodifieddate',
-                  operator: 'GTE',
-                  value: contactsStartDate
-                },
-                {
-                  propertyName: 'invalid_lead',
-                  operator: 'NOT_HAS_PROPERTY'
-                }
-              ]
-            }
-          ],
-          properties: [
-            'firstname', 'lastname', 'email', 'phone', 'hubspot_owner_id',
-            'createdate', 'hs_lead_status', 'lifecyclestage', 'hs_analytics_source',
-            'hubspot_owner_assigneddate'
-          ],
-          limit: 50,
-          after: contactAfter
-        },
-        { headers: HUBSPOT_HEADERS }
-      );
-
-      const contactsOnPage = contactsResponse.data.results || [];
-      allContacts = allContacts.concat(contactsOnPage);
-      totalContactsFetched += contactsOnPage.length;
-
-      if (contactsResponse.data.paging && contactsResponse.data.paging.next) {
-        hasMoreContacts = true;
-        contactAfter = contactsResponse.data.paging.next.after;
-      } else {
+    // CONTACTS SYNC - Use date windowing to bypass 300 result API limit
+    console.log(`📅 Starting contact sync with ${isInitialLoad ? '7-day' : '24-hour'} windows...`);
+    
+    if (isInitialLoad) {
+      // For initial load: fetch in 7-day windows to get all 60 days
+      const startDate = dayjs(contactsStartDate);
+      const endDate = dayjs();
+      let currentWindowStart = startDate;
+      
+      while (currentWindowStart.isBefore(endDate)) {
+        const windowEnd = currentWindowStart.add(7, 'days');
+        const windowEndCapped = windowEnd.isAfter(endDate) ? endDate : windowEnd;
+        
+        console.log(`📋 Fetching contacts: ${currentWindowStart.format('YYYY-MM-DD')} to ${windowEndCapped.format('YYYY-MM-DD')}`);
+        
+        // Fetch contacts for this 7-day window
+        contactAfter = null;
         hasMoreContacts = false;
+        
+        do {
+          const contactsResponse = await axios.post(
+            'https://api.hubapi.com/crm/v3/objects/contacts/search',
+            {
+              filterGroups: [
+                {
+                  filters: [
+                    {
+                      propertyName: 'createdate',
+                      operator: 'GTE',
+                      value: currentWindowStart.toISOString()
+                    },
+                    {
+                      propertyName: 'createdate',
+                      operator: 'LTE',
+                      value: windowEndCapped.toISOString()
+                    },
+                    {
+                      propertyName: 'invalid_lead',
+                      operator: 'NOT_HAS_PROPERTY'
+                    }
+                  ]
+                }
+              ],
+              properties: [
+                'firstname', 'lastname', 'email', 'phone', 'hubspot_owner_id',
+                'createdate', 'hs_lead_status', 'lifecyclestage', 'hs_analytics_source',
+                'hubspot_owner_assigneddate'
+              ],
+              limit: 100,
+              after: contactAfter
+            },
+            { headers: HUBSPOT_HEADERS }
+          );
+
+          const contactsOnPage = contactsResponse.data.results || [];
+          allContacts = allContacts.concat(contactsOnPage);
+          totalContactsFetched += contactsOnPage.length;
+
+          if (contactsResponse.data.paging && contactsResponse.data.paging.next) {
+            hasMoreContacts = true;
+            contactAfter = contactsResponse.data.paging.next.after;
+          } else {
+            hasMoreContacts = false;
+          }
+
+          // Add delay between pagination requests
+          if (hasMoreContacts) {
+            await delay(300);
+          }
+
+        } while (hasMoreContacts);
+        
+        // Move to next 7-day window
+        currentWindowStart = windowEnd;
+        
+        // Add delay between date windows
+        await delay(500);
       }
+      
+    } else {
+      // For incremental sync: simple 24-hour window (should be <300 results)
+      do {
+        const contactsResponse = await axios.post(
+          'https://api.hubapi.com/crm/v3/objects/contacts/search',
+          {
+            filterGroups: [
+              {
+                filters: [
+                  {
+                    propertyName: 'lastmodifieddate',
+                    operator: 'GTE',
+                    value: contactsStartDate
+                  },
+                  {
+                    propertyName: 'invalid_lead',
+                    operator: 'NOT_HAS_PROPERTY'
+                  }
+                ]
+              }
+            ],
+            properties: [
+              'firstname', 'lastname', 'email', 'phone', 'hubspot_owner_id',
+              'createdate', 'hs_lead_status', 'lifecyclestage', 'hs_analytics_source',
+              'hubspot_owner_assigneddate'
+            ],
+            limit: 100,
+            after: contactAfter
+          },
+          { headers: HUBSPOT_HEADERS }
+        );
 
-      // Add delay between contact pagination requests
-      if (hasMoreContacts) {
-        await delay(500); // 500ms delay for contact requests (more conservative)
-      }
+        const contactsOnPage = contactsResponse.data.results || [];
+        allContacts = allContacts.concat(contactsOnPage);
+        totalContactsFetched += contactsOnPage.length;
 
-    } while (hasMoreContacts);
+        if (contactsResponse.data.paging && contactsResponse.data.paging.next) {
+          hasMoreContacts = true;
+          contactAfter = contactsResponse.data.paging.next.after;
+        } else {
+          hasMoreContacts = false;
+        }
 
-    console.log(`✅ Fetched ${totalContactsFetched} contacts from HubSpot.`);
+        // Add delay between contact pagination requests
+        if (hasMoreContacts) {
+          await delay(300);
+        }
+
+      } while (hasMoreContacts);
+    }
+
+    console.log(`✅ Fetched ${totalContactsFetched} contacts from HubSpot using windowed approach.`);
 
     // SYNC DEALS TO SUPABASE
     let dealsUpserted = 0;
