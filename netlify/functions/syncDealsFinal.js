@@ -12,8 +12,30 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-exports.handler = async () => {
+exports.handler = async (event) => {
   try {
+    // Add execution protection to prevent overlapping runs
+    const { data: runningSync } = await supabase
+      .from('b_sync_logs')
+      .select('created_at')
+      .eq('function_name', 'syncDealsFinal')
+      .eq('status', 'running')
+      .gte('created_at', dayjs().subtract(5, 'minutes').toISOString())
+      .single();
+    
+    if (runningSync) {
+      console.log('⏸️ Sync already running, skipping this execution');
+      return { statusCode: 200, body: JSON.stringify({ message: 'Sync already running' }) };
+    }
+    
+    // Mark this sync as running
+    await supabase.from('b_sync_logs').insert({
+      id: require('crypto').randomUUID(),
+      function_name: 'syncDealsFinal',
+      status: 'running',
+      message: 'Sync started',
+      created_at: new Date().toISOString()
+    });
     // --- THIS IS THE LINE THAT WAS CHANGED ---
     const isoStart = dayjs().tz('America/Chicago').startOf('month').toISOString();
     
@@ -121,11 +143,16 @@ exports.handler = async () => {
     
     if (isInitialLoad) {
       // For initial load: fetch in 7-day windows to get all 60 days
-      const startDate = dayjs(contactsStartDate);
-      const endDate = dayjs();
+      const startDate = dayjs(contactsStartDate).tz('America/Chicago');
+      const endDate = dayjs().tz('America/Chicago');
       let currentWindowStart = startDate;
+      let windowCount = 0;
+      const maxWindows = 10; // Safety limit to prevent infinite loops
       
-      while (currentWindowStart.isBefore(endDate)) {
+      console.log(`📊 Will fetch contacts from ${startDate.format('YYYY-MM-DD')} to ${endDate.format('YYYY-MM-DD')}`);
+      
+      while (currentWindowStart.isBefore(endDate) && windowCount < maxWindows) {
+        windowCount++;
         const windowEnd = currentWindowStart.add(7, 'days');
         const windowEndCapped = windowEnd.isAfter(endDate) ? endDate : windowEnd;
         
@@ -193,7 +220,11 @@ exports.handler = async () => {
         
         // Add delay between date windows
         await delay(500);
+        
+        console.log(`📈 Window ${windowCount}/${maxWindows} complete. Total contacts so far: ${totalContactsFetched}`);
       }
+      
+      console.log(`✅ Completed ${windowCount} windows. Fetched ${totalContactsFetched} contacts in initial load.`);
       
     } else {
       // For incremental sync: simple 24-hour window (should be <300 results)
@@ -308,7 +339,12 @@ exports.handler = async () => {
       }
     }
 
-    // Log successful sync
+    // Mark running sync as complete and log success
+    await supabase.from('b_sync_logs')
+      .update({ status: 'completed' })
+      .eq('function_name', 'syncDealsFinal')
+      .eq('status', 'running');
+      
     const successMessage = `✅ Synced ${dealsUpserted}/${totalDealsFetched} deals and ${contactsUpserted}/${totalContactsFetched} contacts to Supabase.`;
     
     await supabase.from('b_sync_logs').insert({
@@ -330,9 +366,16 @@ exports.handler = async () => {
       })
     };
   } catch (err) {
+    // Mark running sync as failed
+    await supabase.from('b_sync_logs')
+      .update({ status: 'error', message: err.message })
+      .eq('function_name', 'syncDealsFinal')
+      .eq('status', 'running');
+      
     if (err.response) {
       console.error('HubSpot API Error:', err.response.data);
     }
+    console.error('Full error:', err);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: `❌ Sync failed: ${err.message}` })
