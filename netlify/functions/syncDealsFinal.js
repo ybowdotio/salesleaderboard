@@ -142,23 +142,39 @@ exports.handler = async (event) => {
     console.log(`📅 Starting contact sync with ${isInitialLoad ? '7-day' : '24-hour'} windows...`);
     
     if (isInitialLoad) {
-      // For initial load: fetch in 7-day windows to get all 60 days
+      // For initial load: fetch in 3-day windows to avoid 30s timeout
       const startDate = dayjs(contactsStartDate).tz('America/Chicago');
       const endDate = dayjs().tz('America/Chicago');
       let currentWindowStart = startDate;
       let windowCount = 0;
-      const maxWindows = 10; // Safety limit to prevent infinite loops
+      const maxWindows = 5; // Process max 5 windows per execution (15 days)
+      
+      // Check if we have contacts from recent dates to continue from where we left off
+      const { data: lastContact } = await supabase
+        .from('b_contacts')
+        .select('hubspot_created_date')
+        .order('hubspot_created_date', { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (lastContact?.hubspot_created_date) {
+        const lastContactDate = dayjs(lastContact.hubspot_created_date).tz('America/Chicago');
+        if (lastContactDate.isAfter(startDate)) {
+          currentWindowStart = lastContactDate.add(1, 'day');
+          console.log(`📍 Resuming from ${currentWindowStart.format('YYYY-MM-DD')} (last contact: ${lastContactDate.format('YYYY-MM-DD')})`);
+        }
+      }
       
       console.log(`📊 Will fetch contacts from ${startDate.format('YYYY-MM-DD')} to ${endDate.format('YYYY-MM-DD')}`);
       
       while (currentWindowStart.isBefore(endDate) && windowCount < maxWindows) {
         windowCount++;
-        const windowEnd = currentWindowStart.add(7, 'days');
+        const windowEnd = currentWindowStart.add(3, 'days'); // 3-day windows for faster processing
         const windowEndCapped = windowEnd.isAfter(endDate) ? endDate : windowEnd;
         
         console.log(`📋 Fetching contacts: ${currentWindowStart.format('YYYY-MM-DD')} to ${windowEndCapped.format('YYYY-MM-DD')}`);
         
-        // Fetch contacts for this 7-day window
+        // Fetch contacts for this 3-day window
         contactAfter = null;
         hasMoreContacts = false;
         
@@ -208,18 +224,18 @@ exports.handler = async (event) => {
             hasMoreContacts = false;
           }
 
-          // Add delay between pagination requests
+          // Reduce delays to fit within 30s timeout
           if (hasMoreContacts) {
-            await delay(300);
+            await delay(100); // Faster pagination
           }
 
         } while (hasMoreContacts);
         
-        // Move to next 7-day window
+        // Move to next 3-day window
         currentWindowStart = windowEnd;
         
-        // Add delay between date windows
-        await delay(500);
+        // Reduce delay between windows
+        await delay(200);
         
         console.log(`📈 Window ${windowCount}/${maxWindows} complete. Total contacts so far: ${totalContactsFetched}`);
       }
